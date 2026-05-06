@@ -1,1 +1,72 @@
-if(!self.define){let e,s={};const n=(n,r)=>(n=new URL(n+".js",r).href,s[n]||new Promise(s=>{if("document"in self){const e=document.createElement("script");e.src=n,e.onload=s,document.head.appendChild(e)}else e=n,importScripts(n),s()}).then(()=>{let e=s[n];if(!e)throw new Error(`Module ${n} didn’t register its module`);return e}));self.define=(r,a)=>{const i=e||("document"in self?document.currentScript.src:"")||location.href;if(s[i])return;let c={};const t=e=>n(e,i),o={module:{uri:i},exports:c,require:t};s[i]=Promise.all(r.map(e=>o[e]||t(e))).then(e=>(a(...e),c))}}define(["./workbox-785af278"],function(e){"use strict";importScripts("fallback-Hg3U2NA_SE2ZsoEEzprmu.js"),self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"/_next/app-build-manifest.json",revision:"ecc8785afbfd44da83992cc520d959ec"},{url:"/_next/static/Hg3U2NA_SE2ZsoEEzprmu/_buildManifest.js",revision:"2ec694eb52ae4f523f265a46bae4d768"},{url:"/_next/static/Hg3U2NA_SE2ZsoEEzprmu/_ssgManifest.js",revision:"b6652df95db52feb4daf4eca35380933"},{url:"/_next/static/chunks/23-2ff39495824523fa.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/379.6ee31d3a36182830.js",revision:"6ee31d3a36182830"},{url:"/_next/static/chunks/44530001-7f846145462af51d.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/631.c28d0d2798c628a7.js",revision:"c28d0d2798c628a7"},{url:"/_next/static/chunks/7a49ec60-91de018a74a666d0.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/855-93ff170a92380272.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/866-8f8de101e237d25e.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/app/_not-found/page-8f9e4de0b0e77594.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/app/debug/page-e9e1ac541a093135.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/app/layout-8980170e4032b9cc.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/app/library/page-7ad4828916d87f9e.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/app/login/page-3e162eba331cc5d8.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/app/offline/page-dd3dfc0620e2311c.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/app/page-ffc06cd4473239c6.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/app/reader/%5Bid%5D/page-0921916239f6e121.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/fd9d1056-43fa4647ec19fb91.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/framework-bc7ee59c97fec626.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/main-7ab255ba5a8fcd15.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/main-app-80a9f860ea89f9c7.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/pages/_app-6a626577ffa902a4.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/pages/_error-1be831200e60c5c0.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/chunks/polyfills-2d7d1ae7468b5dcf.js",revision:"e3786c0f20df7ff5e45c65d540877947"},{url:"/_next/static/chunks/webpack-3c2f894034155298.js",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/_next/static/css/6d7f71406ad88dce.css",revision:"6d7f71406ad88dce"},{url:"/_next/static/media/pdf.worker.min.e7997937.js",revision:"e7997937"},{url:"/icons/icon-128.png",revision:"2726d15a1b8cd41d5afc4d561249b4b1"},{url:"/icons/icon-144.png",revision:"30b1c036c7a2a41bdae6adda369c164b"},{url:"/icons/icon-152.png",revision:"36701d5764231c20afd5cbff370d0585"},{url:"/icons/icon-192.png",revision:"78351489d056d8e278ea9374ca654676"},{url:"/icons/icon-384.png",revision:"38eb6f746d6287ef5573ae5ae99e3194"},{url:"/icons/icon-512.png",revision:"56f320a4f8e8b3a83992b3fe089a09cc"},{url:"/icons/icon-72.png",revision:"5dfb297272fc7815568341f6b6c12517"},{url:"/icons/icon-96.png",revision:"9dbfa77f6b36f16c900d29f7a22fe5a9"},{url:"/manifest.json",revision:"8a27ffa0f60eda43a4770087213bc5f2"},{url:"/offline",revision:"Hg3U2NA_SE2ZsoEEzprmu"},{url:"/pdf.worker.min.js",revision:"114ea25a82817c033af5af4f94882435"}],{ignoreURLParametersMatching:[]}),e.cleanupOutdatedCaches(),e.registerRoute("/",new e.NetworkFirst({cacheName:"start-url",plugins:[{cacheWillUpdate:async({request:e,response:s,event:n,state:r})=>s&&"opaqueredirect"===s.type?new Response(s.body,{status:200,statusText:"OK",headers:s.headers}):s},{handlerDidError:async({request:e})=>self.fallback(e)}]}),"GET"),e.registerRoute(/^https:\/\/fonts\.googleapis\.com/,new e.CacheFirst({cacheName:"google-fonts-stylesheets",plugins:[new e.ExpirationPlugin({maxEntries:10,maxAgeSeconds:31536e3}),{handlerDidError:async({request:e})=>self.fallback(e)}]}),"GET"),e.registerRoute(/^https:\/\/fonts\.gstatic\.com/,new e.CacheFirst({cacheName:"google-fonts-webfonts",plugins:[new e.ExpirationPlugin({maxEntries:20,maxAgeSeconds:31536e3}),{handlerDidError:async({request:e})=>self.fallback(e)}]}),"GET"),e.registerRoute(/^https:\/\/cdnjs\.cloudflare\.com/,new e.CacheFirst({cacheName:"cdnjs-pdfjs",plugins:[new e.ExpirationPlugin({maxEntries:5,maxAgeSeconds:7776e3}),{handlerDidError:async({request:e})=>self.fallback(e)}]}),"GET"),e.registerRoute(({url:e})=>e.hostname.includes("supabase.co")&&e.pathname.includes("/rest/"),new e.NetworkFirst({cacheName:"supabase-api",networkTimeoutSeconds:5,plugins:[new e.ExpirationPlugin({maxEntries:50,maxAgeSeconds:86400}),{handlerDidError:async({request:e})=>self.fallback(e)}]}),"GET"),e.registerRoute(({url:e})=>e.hostname.includes("supabase.co")&&e.pathname.includes("/storage/"),new e.CacheFirst({cacheName:"pdf-storage",plugins:[new e.ExpirationPlugin({maxEntries:30,maxAgeSeconds:2592e3}),new e.CacheableResponsePlugin({statuses:[0,200]}),{handlerDidError:async({request:e})=>self.fallback(e)}]}),"GET"),e.registerRoute(/^\/_next\//,new e.StaleWhileRevalidate({cacheName:"nextjs-static",plugins:[new e.ExpirationPlugin({maxEntries:100,maxAgeSeconds:2592e3}),{handlerDidError:async({request:e})=>self.fallback(e)}]}),"GET"),e.registerRoute(/.*/,new e.NetworkFirst({cacheName:"default",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:50,maxAgeSeconds:604800}),{handlerDidError:async({request:e})=>self.fallback(e)}]}),"GET")});
+// Drizzle Reader — Minimal Service Worker
+// Strategy: Cache-first for static assets, network-first for pages.
+// NO auth interference. NO complex sync.
+
+const CACHE_NAME = 'drizzle-reader-v1';
+
+// Static assets to pre-cache on install
+const PRECACHE_ASSETS = [
+  '/library',
+  '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/pdf.worker.min.js',
+];
+
+// Install: pre-cache core assets
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_ASSETS))
+  );
+  self.skipWaiting();
+});
+
+// Activate: delete old caches
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+      )
+    )
+  );
+  self.clients.claim();
+});
+
+// Fetch: stale-while-revalidate for _next/static, network-first for everything else
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  // Only handle same-origin GET requests
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+
+  // For Next.js static assets (_next/static) — cache-first
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // For everything else (pages, API) — network-first, fallback to cache
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        // Cache successful page responses
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
+  );
+});

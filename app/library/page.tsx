@@ -1,30 +1,8 @@
-import { createClient } from "@/utils/supabase/server";
-import { redirect } from "next/navigation";
 import LibraryGrid from "@/components/LibraryGrid";
 
-// Always fetch fresh data — never serve cached page counts or progress
 export const dynamic = "force-dynamic";
 
-export default async function LibraryPage() {
-  const supabase = createClient();
-
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) redirect("/login");
-
-  const { data: pdfs } = await supabase
-    .from("pdfs")
-    .select("*")
-    .order("last_opened_at", { ascending: false });
-
-  const { data: settings } = await supabase.from("pdf_settings").select("*");
-
-  const settingsMap = (settings || []).reduce((acc: any, s: any) => {
-    acc[s.pdf_id] = s;
-    return acc;
-  }, {});
-
-  const firstName = user.email ? user.email.split("@")[0] : "Reader";
-
+export default function LibraryPage() {
   return (
     <div className="min-h-screen">
       {/* Bokeh background (uses CSS vars, responds to dark mode) */}
@@ -48,12 +26,7 @@ export default async function LibraryPage() {
       </nav>
 
       <main className="pt-28 pb-24 px-8 max-w-6xl mx-auto font-['DM_Sans']">
-        <LibraryGrid
-          initialPdfs={pdfs || []}
-          initialSettings={settingsMap}
-          userId={user.id}
-          firstName={firstName}
-        />
+        <LibraryGrid />
       </main>
     </div>
   );

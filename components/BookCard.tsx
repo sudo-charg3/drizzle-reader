@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Trash2, Edit2, Bookmark, MessageSquare, CloudDownload, CloudOff, CheckCircle2, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Trash2, Edit2, Bookmark, MessageSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/utils/supabase/client";
-import { checkIfCached, saveToIndexedDB } from "@/utils/offlineDB";
 
 const COVER_COLORS = [
   "#C48A8A", "#9EACA0", "#8B9DB4", "#CBA471",
@@ -29,47 +27,21 @@ export default function BookCard({
   onRename,
 }: BookCardProps) {
   const router = useRouter();
-  const supabase = createClient();
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(pdf.name);
-  const [offlineStatus, setOfflineStatus] = useState<'none'|'downloading'|'saved'>('none');
-
-  // Check if PDF is already cached offline
-  useEffect(() => {
-    checkIfCached(pdf.id).then(cached => {
-      if (cached) setOfflineStatus('saved');
-    });
-  }, [pdf.id]);
-
-  const handleDownloadOffline = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setOfflineStatus('downloading');
-    try {
-      const { data, error } = await supabase.storage
-        .from('pdfs')
-        .download(pdf.storage_path);
-      if (error) throw error;
-      const arrayBuffer = await data.arrayBuffer();
-      await saveToIndexedDB(pdf.id, arrayBuffer);
-      setOfflineStatus('saved');
-    } catch (err) {
-      console.error('Offline save failed:', err);
-      setOfflineStatus('none');
-    }
-  };
 
   const coverColor = COVER_COLORS[index % COVER_COLORS.length];
   const dateStr = new Date(
-    pdf.last_opened_at || pdf.added_at
+    pdf.lastOpenedAt || pdf.createdAt
   ).toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
 
-  const total = settings?.total_pages || pdf.page_count || 0;
-  const read = settings?.pages_read || 1;
+  const total = settings?.totalPages || pdf.pageCount || 0;
+  const read = settings?.currentPage || 1;
   const pct = total > 0 ? Math.min(100, Math.round((read / total) * 100)) : 0;
   
   const bookmarks = (settings?.highlights || [])
@@ -115,7 +87,6 @@ export default function BookCard({
           : "0 8px 24px rgba(0,0,0,0.06)",
       }}
     >
-      {/* Cover (top 60%) */}
       <div
         className="h-[60%] relative flex items-center justify-center p-8 text-center"
         style={{ backgroundColor: coverColor }}
@@ -154,7 +125,6 @@ export default function BookCard({
         )}
       </div>
 
-      {/* Info (bottom 40%) */}
       <div
         className="h-[40%] p-4 flex flex-col justify-between"
         style={{ background: cardBg }}
@@ -169,10 +139,7 @@ export default function BookCard({
               onBlur={handleRenameSubmit}
               onKeyDown={(e) => e.key === "Enter" && handleRenameSubmit()}
               className="w-full text-sm font-semibold border-b focus:outline-none bg-transparent"
-              style={{
-                borderColor: inputBorderColor,
-                color: titleColor,
-              }}
+              style={{ borderColor: inputBorderColor, color: titleColor }}
             />
           ) : (
             <h4
@@ -187,7 +154,6 @@ export default function BookCard({
           </p>
         </div>
 
-        {/* Progress */}
         <div className="mt-2">
           {total === 0 ? (
             <div className="text-[0.72rem] italic" style={{ color: metaColor }}>
@@ -219,39 +185,11 @@ export default function BookCard({
         </div>
       </div>
 
-      {/* Action buttons */}
       <div
         className={`absolute bottom-3 right-3 flex gap-1 transition-opacity duration-200 ${
           isHovered ? "opacity-100" : "opacity-0"
         }`}
       >
-        {/* Offline download button */}
-        {offlineStatus === 'none' && (
-          <button
-            onClick={handleDownloadOffline}
-            className="p-1.5 rounded-md transition-colors"
-            style={{ color: metaColor }}
-            onMouseEnter={(e) =>
-              ((e.currentTarget as HTMLElement).style.background = editBtnHover)
-            }
-            onMouseLeave={(e) =>
-              ((e.currentTarget as HTMLElement).style.background = "transparent")
-            }
-            title="Save for offline reading"
-          >
-            <CloudDownload size={14} />
-          </button>
-        )}
-        {offlineStatus === 'downloading' && (
-          <div className="p-1.5" style={{ color: metaColor }}>
-            <Loader2 size={14} className="animate-spin" />
-          </div>
-        )}
-        {offlineStatus === 'saved' && (
-          <div className="p-1.5" style={{ color: '#22c55e' }} title="Available offline">
-            <CheckCircle2 size={14} />
-          </div>
-        )}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -259,12 +197,8 @@ export default function BookCard({
           }}
           className="p-1.5 rounded-md transition-colors"
           style={{ color: metaColor }}
-          onMouseEnter={(e) =>
-            ((e.currentTarget as HTMLElement).style.background = editBtnHover)
-          }
-          onMouseLeave={(e) =>
-            ((e.currentTarget as HTMLElement).style.background = "transparent")
-          }
+          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = editBtnHover)}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
         >
           <Edit2 size={14} />
         </button>
@@ -274,12 +208,8 @@ export default function BookCard({
             onDelete(pdf.id, pdf.name);
           }}
           className="p-1.5 rounded-md transition-colors text-red-400"
-          onMouseEnter={(e) =>
-            ((e.currentTarget as HTMLElement).style.background = deleteBtnHover)
-          }
-          onMouseLeave={(e) =>
-            ((e.currentTarget as HTMLElement).style.background = "transparent")
-          }
+          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = deleteBtnHover)}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
         >
           <Trash2 size={14} />
         </button>

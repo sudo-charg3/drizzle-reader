@@ -3,17 +3,9 @@
 import { useState, useEffect } from "react";
 import BookCard from "./BookCard";
 import UploadModal from "./UploadModal";
-import { Plus, Sun, Moon, User, LogOut, Bookmark, X, MessageSquare } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
+import { Plus, Sun, Moon, Bookmark, X, MessageSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { getPendingUploads } from "@/utils/uploadQueue";
-
-interface LibraryGridProps {
-  initialPdfs: any[];
-  initialSettings: any;
-  userId: string;
-  firstName: string;
-}
+import { getAllLocalPdfs, getAllPdfSettingsLocal, deleteLocalPdf, updateLocalPdfName } from "@/utils/localStore";
 
 const LIGHT = {
   bg: "#f7f4ef",
@@ -26,16 +18,15 @@ const LIGHT = {
   bokeh3: "rgba(255, 220, 190, 0.28)",
 };
 
-// Rich midnight navy — no grey, no washed out tones
 const DARK = {
   bg: "#0d1117",
   cardBg: "#161b27",
   text: "#e6e1d6",
   muted: "#8b95a8",
   border: "rgba(255,255,255,0.06)",
-  bokeh1: "rgba(99, 102, 241, 0.18)",   // indigo
-  bokeh2: "rgba(139, 92, 246, 0.14)",   // violet
-  bokeh3: "rgba(59, 130, 246, 0.12)",   // blue
+  bokeh1: "rgba(99, 102, 241, 0.18)",
+  bokeh2: "rgba(139, 92, 246, 0.14)",
+  bokeh3: "rgba(59, 130, 246, 0.12)",
 };
 
 function applyLibraryTheme(dark: boolean) {
@@ -49,11 +40,9 @@ function applyLibraryTheme(dark: boolean) {
   root.style.setProperty("--bokeh-1", t.bokeh1);
   root.style.setProperty("--bokeh-2", t.bokeh2);
   root.style.setProperty("--bokeh-3", t.bokeh3);
-  // Reset reader-specific vars
   root.style.setProperty("--font-family", "'DM Sans', sans-serif");
   root.style.setProperty("--font-size", "1rem");
   root.style.setProperty("--line-height", "1.6");
-  // Force body background immediately (CSS var transition can lag)
   document.body.style.backgroundColor = t.bg;
   document.body.style.backgroundImage = "none";
   if (dark) document.body.classList.add("dark-theme");
@@ -61,29 +50,35 @@ function applyLibraryTheme(dark: boolean) {
   document.body.classList.remove("glass-theme");
 }
 
-export default function LibraryGrid({
-  initialPdfs,
-  initialSettings,
-  userId,
-  firstName,
-}: LibraryGridProps) {
-  const [pdfs, setPdfs] = useState(initialPdfs);
-  const [settings] = useState(initialSettings);
+export default function LibraryGrid() {
+  const [pdfs, setPdfs] = useState<any[]>([]);
+  const [settings, setSettings] = useState<any>({});
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
   const [bookmarkSearch, setBookmarkSearch] = useState("");
-  const supabase = createClient();
   const router = useRouter();
 
-  // On mount: read stored preference and apply theme
+  const loadLocalData = async () => {
+    const localPdfs = await getAllLocalPdfs();
+    const localSettings = await getAllPdfSettingsLocal();
+    
+    const settingsMap = localSettings.reduce((acc: any, s: any) => {
+      acc[s.pdfId] = s;
+      return acc;
+    }, {});
+
+    setPdfs(localPdfs.sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime()));
+    setSettings(settingsMap);
+  };
+
   useEffect(() => {
     const stored = localStorage.getItem("library-dark-mode") === "true";
     setIsDark(stored);
     setMounted(true);
     applyLibraryTheme(stored);
+    loadLocalData();
   }, []);
 
   const toggleDark = () => {
@@ -93,117 +88,45 @@ export default function LibraryGrid({
     applyLibraryTheme(next);
   };
 
-  useEffect(() => {
-    async function loadLocalOnly() {
-      const pending = await getPendingUploads();
-      const localPdfs = pending.map(p => ({
-        id: p.id,
-        user_id: p.userId,
-        name: p.bookName,
-        file_name: p.fileName,
-        storage_path: `local`,
-        file_size_bytes: p.fileSize,
-        last_opened_at: p.createdAt,
-        isLocal: true
-      }));
-      
-      // Merge by ID to avoid duplicates
-      setPdfs(prev => {
-        const merged = [...prev];
-        localPdfs.forEach(lp => {
-          if (!merged.find(p => p.id === lp.id)) {
-            merged.push(lp);
-          }
-        });
-        return merged.sort((a, b) => new Date(b.last_opened_at).getTime() - new Date(a.last_opened_at).getTime());
-      });
-    }
-    
-    // Load initially
-    loadLocalOnly();
-
-    // Supabase realtime
-    let channel: any;
-    try {
-      channel = supabase.channel('library-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'pdfs' }, () => {
-          router.refresh();
-        })
-        .subscribe((status) => {
-          if (status === 'CHANNEL_ERROR') {
-            console.warn('Realtime subscription failed (likely permissions).');
-          }
-        });
-    } catch (err) {
-      console.error('Failed to setup realtime:', err);
-    }
-
-    return () => {
-      if (channel) supabase.removeChannel(channel);
-    };
-  }, [supabase, router]);
-
-  const totalBytes = (pdfs || []).reduce(
-    (acc, pdf) => acc + (pdf.file_size_bytes || 0),
-    0
-  );
+  const totalBytes = pdfs.reduce((acc, pdf) => acc + (pdf.fileSize || 0), 0);
   const mbSize = (totalBytes / (1024 * 1024)).toFixed(1);
 
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Remove "${name}" from your library? Your highlights and settings will be lost.`)) return;
-    setPdfs(pdfs.filter((p) => p.id !== id));
-    const { error } = await supabase.from("pdfs").delete().eq("id", id);
-    if (error) { alert("Failed to delete PDF."); router.refresh(); }
+    await deleteLocalPdf(id);
+    await loadLocalData();
   };
 
   const handleRename = async (id: string, newName: string) => {
-    setPdfs(pdfs.map((p) => (p.id === id ? { ...p, name: newName } : p)));
-    const { error } = await supabase.from("pdfs").update({ name: newName }).eq("id", id);
-    if (error) { alert("Failed to rename PDF."); router.refresh(); }
+    await updateLocalPdfName(id, newName);
+    await loadLocalData();
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
-  };
-
-  // Tailwind classes switch based on dark
   const mutedColor = isDark ? "#a0a5b5" : "#888888";
   const borderColor = isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)";
   const hoverBg = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)";
 
   return (
     <>
-      {/* Fixed nav buttons — z-[60] so they're above the z-50 nav bar */}
-      <div
-        className="fixed top-0 right-8 h-20 flex items-center gap-3 z-[60]"
-        style={{ fontFamily: "'DM Sans', sans-serif" }}
-      >
+      <div className="fixed top-0 right-8 h-20 flex items-center gap-3 z-[60]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
         <button
           onClick={toggleDark}
           className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200"
-          style={{
-            color: "var(--text-color)",
-            border: `1px solid ${borderColor}`,
-          }}
+          style={{ color: "var(--text-color)", border: `1px solid ${borderColor}` }}
           onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = hoverBg)}
           onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
           title={isDark ? "Light mode" : "Dark mode"}
         >
-          {/* Only render icon after mount to avoid hydration mismatch */}
-                          <div className="relative w-4 h-4 flex items-center justify-center">
-                  <Sun size={16} className={`absolute transition-all duration-300 ${isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 rotate-90'}`} />
-                  <Moon size={16} className={`absolute transition-all duration-300 ${!isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 -rotate-90'}`} />
-                </div>
+          <div className="relative w-4 h-4 flex items-center justify-center">
+            <Sun size={16} className={`absolute transition-all duration-300 ${isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 rotate-90'}`} />
+            <Moon size={16} className={`absolute transition-all duration-300 ${!isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 -rotate-90'}`} />
+          </div>
         </button>
 
         <button
           onClick={() => setIsUploadOpen(true)}
           className="px-4 py-1.5 rounded-full text-sm flex items-center gap-1.5 transition-all duration-200"
-          style={{
-            color: "var(--text-color)",
-            border: `1px solid ${borderColor}`,
-          }}
+          style={{ color: "var(--text-color)", border: `1px solid ${borderColor}` }}
           onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = hoverBg)}
           onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
         >
@@ -220,54 +143,20 @@ export default function LibraryGrid({
         >
           {mounted && <Bookmark size={16} />}
         </button>
-
-        <div className="relative">
-          <button
-            onClick={() => setIsProfileOpen(!isProfileOpen)}
-            className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200"
-            style={{ color: "var(--text-color)", border: `1px solid ${borderColor}` }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = hoverBg)}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
-          >
-            {mounted && <User size={16} />}
-          </button>
-          
-          {isProfileOpen && (
-            <div 
-              className="absolute right-0 top-12 w-48 rounded-xl shadow-xl py-2 z-50 border"
-              style={{ background: "var(--card-bg)", borderColor: "var(--card-border)" }}
-            >
-              <div className="px-4 py-2 border-b mb-1" style={{ borderColor: "var(--card-border)" }}>
-                <p className="text-sm font-semibold truncate" style={{ color: "var(--text-color)" }}>{firstName}</p>
-                <p className="text-[0.65rem] truncate opacity-70" style={{ color: "var(--text-color)" }}>Profile</p>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-red-500"
-              >
-                <LogOut size={14} /> Sign out
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Welcome Header */}
       <header className="mb-12">
         <div className="text-xs uppercase tracking-widest mb-2" style={{ color: mutedColor }}>
-          {new Date().toLocaleDateString("en-GB", {
-            weekday: "long", day: "numeric", month: "long", year: "numeric",
-          })}
+          {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
         </div>
         <h1 className="text-4xl font-['Lora'] mb-2" style={{ color: "var(--text-color)" }}>
-          Welcome back, {firstName}
+          My Library
         </h1>
         <p className="text-lg font-light opacity-70" style={{ color: mutedColor }}>
           What would you like to read today?
         </p>
       </header>
 
-      {/* Book Grid */}
       {pdfs.length === 0 ? (
         <div className="text-center mt-20">
           <p className="italic mb-8" style={{ color: mutedColor }}>
@@ -275,11 +164,8 @@ export default function LibraryGrid({
           </p>
           <button
             onClick={() => setIsUploadOpen(true)}
-            className="w-full max-w-[280px] h-[373px] mx-auto border-2 border-dashed rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer"
-            style={{
-              borderColor,
-              color: mutedColor,
-            }}
+            className="w-full max-w-[280px] h-[373px] mx-auto border-2 border-dashed rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ borderColor, color: mutedColor }}
           >
             <Plus size={40} className="mb-4" />
             <span className="font-medium">Add Book</span>
@@ -301,7 +187,7 @@ export default function LibraryGrid({
 
           <button
             onClick={() => setIsUploadOpen(true)}
-            className="w-[280px] h-[373px] border-2 border-dashed rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer"
+            className="w-[280px] h-[373px] border-2 border-dashed rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
             style={{ borderColor, color: mutedColor }}
           >
             <Plus size={40} className="mb-4" />
@@ -312,14 +198,13 @@ export default function LibraryGrid({
 
       {pdfs.length > 0 && (
         <div className="text-center text-sm mt-20 pb-8" style={{ color: mutedColor }}>
-          {pdfs.length} {pdfs.length === 1 ? "book" : "books"} &middot; ~{mbSize} MB saved securely
+          {pdfs.length} {pdfs.length === 1 ? "book" : "books"} &middot; ~{mbSize} MB stored locally
         </div>
       )}
 
       {isUploadOpen && (
         <UploadModal
-          userId={userId}
-          onClose={() => { setIsUploadOpen(false); router.refresh(); }}
+          onClose={() => { setIsUploadOpen(false); loadLocalData(); }}
         />
       )}
 

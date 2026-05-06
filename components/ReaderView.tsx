@@ -28,12 +28,12 @@ export default function ReaderView({
        const urlPage = new URLSearchParams(window.location.search).get('page');
        if (urlPage) return parseInt(urlPage);
     }
-    return initialSettings?.last_page || 1;
+    return initialSettings?.lastPage || initialSettings?.last_page || 1;
   });
 
   // Settings State
   const [themeId, setThemeId] = useState(initialSettings?.theme || "paper");
-  const [fontSize, setFontSize] = useState(initialSettings?.font_size || 18);
+  const [fontSize, setFontSize] = useState(initialSettings?.fontSize || initialSettings?.font_size || 18);
   const [fontFamily, setFontFamily] = useState(() => {
     // Normalize: handle both old CSS strings and new short keys
     const raw = initialSettings?.font || "lora";
@@ -43,7 +43,7 @@ export default function ReaderView({
     return raw; 
   });
   const [lineSpacing, setLineSpacing] = useState(
-    initialSettings?.line_spacing || "1.85"
+    initialSettings?.lineSpacing || initialSettings?.line_spacing || "1.85"
   );
   const [highlights, setHighlights] = useState<any[]>(
     initialSettings?.highlights || []
@@ -190,21 +190,13 @@ export default function ReaderView({
     root.style.setProperty("--line-height", lineSpacing);
   }, [themeId, fontFamily, fontSize, lineSpacing]);
 
-  // Save Settings — with offline queue fallback for highlights
+  // Save Settings — exclusively local via IndexedDB
   const saveSettings = useCallback(
     (updates: any) => {
-      import('@/utils/settingsQueue').then(({ addSettingsToQueue }) => {
-        addSettingsToQueue(pdf.id, updates).then(() => {
-          import('@/utils/syncEngine').then(({ syncEngine }) => syncEngine.triggerSync());
-        });
+      import('@/utils/localStore').then(async ({ getPdfSettingsLocal, savePdfSettingsLocal }) => {
+        const existing = await getPdfSettingsLocal(pdf.id) || { pdfId: pdf.id };
+        await savePdfSettingsLocal({ ...existing, ...updates });
       });
-      // Try pushing immediately online to existing endpoint
-      if (typeof navigator !== 'undefined' && navigator.onLine) {
-        try {
-          const payload = { pdfId: pdf.id, ...updates };
-          navigator.sendBeacon("/api/save-settings", JSON.stringify(payload));
-        } catch {}
-      }
     },
     [pdf.id]
   );

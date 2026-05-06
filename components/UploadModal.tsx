@@ -1,154 +1,153 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { createClient } from "@/utils/supabase/client";
-import { useRouter } from "next/navigation";
-import { UploadCloud, X, Loader2 } from "lucide-react";
-import { addToUploadQueue } from "@/utils/uploadQueue";
-import { saveToIndexedDB } from "@/utils/offlineDB";
-import { syncEngine } from "@/utils/syncEngine";
+import { useState, useRef, useCallback } from "react";
+import { UploadCloud, X, File, Loader2 } from "lucide-react";
+import { savePdfLocal } from "@/utils/localStore";
 
 interface UploadModalProps {
-  userId: string;
   onClose: () => void;
 }
 
-export default function UploadModal({ userId, onClose }: UploadModalProps) {
-  const [file, setFile] = useState<File | null>(null);
-  const [bookName, setBookName] = useState("");
-  const [isUploading, setIsUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export default function UploadModal({ onClose }: UploadModalProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const router = useRouter();
-  const supabase = createClient();
 
-  const handleFile = (f: File) => {
-    if (f.type !== "application/pdf") {
-      setError("Please select a valid PDF file.");
-      return;
-    }
-    setFile(f);
-    setBookName(f.name.replace(/\.[^/.]+$/, ""));
-    setError(null);
-  };
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFile(e.dataTransfer.files[0]);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const droppedFile = e.dataTransfer.files[0];
+      if (droppedFile.type === "application/pdf") {
+        setFile(droppedFile);
+      } else {
+        alert("Please upload a valid PDF file.");
+      }
+    }
+  }, []);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
     }
   };
 
-  const handleSave = async () => {
-    if (!file || !bookName.trim()) return;
+  const handleUpload = async () => {
+    if (!file) return;
     setIsUploading(true);
-    setError(null);
 
     try {
-      const pdfId = crypto.randomUUID();
-      const storagePath = `${userId}/${pdfId}.pdf`;
-
       const arrayBuffer = await file.arrayBuffer();
+      const id = crypto.randomUUID();
 
-      // 1. Save to local IDB cache
-      await saveToIndexedDB(pdfId, arrayBuffer);
-
-      // 2. Queue for upload
-      await addToUploadQueue({
-        id: pdfId,
-        userId,
-        bookName: bookName.trim(),
+      await savePdfLocal({
+        id,
+        name: file.name.replace(".pdf", ""),
         fileName: file.name,
         fileData: arrayBuffer,
         fileSize: file.size,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        lastOpenedAt: new Date().toISOString(),
       });
 
-      // 3. Trigger background sync
-      syncEngine.triggerSync();
-
-      // 4. Navigate to reader immediately (offline-first)
-      router.push(`/reader/${pdfId}`);
-    } catch (err: any) {
-      setError(err.message);
+      onClose();
+    } catch (error) {
+      console.error("Failed to process PDF:", error);
+      alert("Failed to save PDF locally.");
       setIsUploading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm font-['DM_Sans']">
-      <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl relative animate-in fade-in zoom-in duration-200">
-        <button 
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 transition-colors"
-          disabled={isUploading}
-        >
-          <X size={20} />
-        </button>
-
-        <h2 className="text-2xl font-['Lora'] mb-6">Add to Library</h2>
-
-        {!file ? (
-          <div 
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
-              isDragging ? "border-gray-500 bg-gray-50" : "border-gray-300 hover:border-gray-400"
-            }`}
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in" onClick={onClose}>
+      <div 
+        className="w-full max-w-md bg-[var(--card-bg)] rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 duration-300"
+        style={{ border: "1px solid var(--card-border)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 border-b flex justify-between items-center" style={{ borderColor: "var(--card-border)" }}>
+          <h2 className="text-xl font-['Lora']" style={{ color: "var(--text-color)" }}>Add to Library</h2>
+          <button 
+            onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center opacity-70 hover:opacity-100 hover:bg-black/5 transition-all"
+            style={{ color: "var(--text-color)" }}
           >
-            <UploadCloud size={48} strokeWidth={1} className="mx-auto text-gray-400 mb-4" />
-            <p className="text-lg text-gray-700 font-light">Drop your PDF here</p>
-            <p className="text-sm text-gray-400 mt-2">or click to browse files</p>
-            <input 
-              type="file" 
-              accept="application/pdf" 
-              className="hidden" 
-              ref={fileInputRef}
-              onChange={(e) => e.target.files && handleFile(e.target.files[0])}
-            />
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <div className="bg-gray-50 p-4 rounded-lg flex items-center gap-4">
-              <div className="w-10 h-12 bg-white border border-gray-200 shadow-sm rounded flex items-center justify-center">
-                <span className="text-[10px] font-bold text-gray-400">PDF</span>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                <p className="text-xs text-gray-500">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
-              </div>
-            </div>
+            <X size={18} />
+          </button>
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Book Title</label>
-              <input 
-                type="text" 
-                value={bookName}
-                onChange={(e) => setBookName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-600"
-                disabled={isUploading}
+        <div className="p-6">
+          {!file ? (
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`w-full h-48 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all ${
+                isDragging ? "border-indigo-500 bg-indigo-500/5" : "hover:bg-black/5 dark:hover:bg-white/5"
+              }`}
+              style={{ borderColor: isDragging ? undefined : "var(--card-border)" }}
+            >
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${isDragging ? "bg-indigo-500 text-white" : "bg-black/5 dark:bg-white/10"}`} style={{ color: isDragging ? undefined : "var(--text-color)" }}>
+                <UploadCloud size={24} />
+              </div>
+              <p className="font-medium mb-1" style={{ color: "var(--text-color)" }}>Click to browse or drag PDF</p>
+              <p className="text-xs opacity-60" style={{ color: "var(--text-color)" }}>Maximum file size: unlimited (stored locally)</p>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                accept="application/pdf"
+                className="hidden"
               />
             </div>
+          ) : (
+            <div className="w-full h-48 border rounded-2xl flex flex-col items-center justify-center p-6 text-center relative overflow-hidden" style={{ borderColor: "var(--card-border)", background: "var(--bg-color)" }}>
+              <button 
+                onClick={() => setFile(null)}
+                className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center bg-black/10 dark:bg-white/10 hover:bg-red-500 hover:text-white transition-colors"
+                title="Remove file"
+              >
+                <X size={14} />
+              </button>
+              
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 bg-red-500 text-white shadow-lg shadow-red-500/20">
+                <File size={32} />
+              </div>
+              <p className="font-semibold text-sm w-full truncate px-4" style={{ color: "var(--text-color)" }}>{file.name}</p>
+              <p className="text-xs opacity-60 mt-1" style={{ color: "var(--text-color)" }}>{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+            </div>
+          )}
 
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-
-            <button 
-              onClick={handleSave}
-              disabled={isUploading || !bookName.trim()}
-              className="w-full mt-2 bg-gray-900 text-white py-2.5 rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 rounded-xl font-medium text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              style={{ color: "var(--text-color)" }}
             >
-              {isUploading ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" /> Saving to library...
-                </>
-              ) : "Save to Library"}
+              Cancel
+            </button>
+            <button
+              onClick={handleUpload}
+              disabled={!file || isUploading}
+              className="px-6 py-2.5 rounded-xl font-medium text-sm bg-gray-900 dark:bg-white text-white dark:text-black hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isUploading && <Loader2 size={16} className="animate-spin" />}
+              {isUploading ? "Saving..." : "Add to Library"}
             </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
