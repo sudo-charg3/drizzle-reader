@@ -17,7 +17,6 @@ export default function OfflineBanner() {
     };
   }, []);
 
-  if (!offline) return null;
 
   return (
     <div style={{
@@ -27,6 +26,10 @@ export default function OfflineBanner() {
       padding: '0.5rem 1rem', zIndex: 99999,
       letterSpacing: '0.02em',
       fontFamily: "'DM Sans', sans-serif",
+      transition: 'all 0.4s ease',
+      transform: offline ? 'translateY(0)' : 'translateY(-100%)',
+      opacity: offline ? 1 : 0,
+      pointerEvents: offline ? 'auto' : 'none',
     }}>
       🌧 You&apos;re offline — reading from local cache
     </div>

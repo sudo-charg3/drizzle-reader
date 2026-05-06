@@ -34,10 +34,15 @@ export default function SyncIndicator() {
     };
   }, []);
 
-  if (status === 'idle') return null;
 
-  return (
-    <div className="fixed top-4 right-4 z-[9999] flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm text-xs font-['DM_Sans'] text-gray-700 border border-gray-100">
+    <div 
+      className="fixed top-4 right-4 z-[9999] flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm text-xs font-['DM_Sans'] text-gray-700 border border-gray-100 transition-all duration-300"
+      style={{ 
+        opacity: status === 'idle' ? 0 : 1,
+        pointerEvents: status === 'idle' ? 'none' : 'auto',
+        transform: status === 'idle' ? 'translateY(-10px)' : 'translateY(0)'
+      }}
+    >
       {status === 'syncing' && (
         <span key="syncing" className="flex items-center gap-2">
           <CloudLightning size={14} className="text-blue-500 animate-pulse" /> Syncing...

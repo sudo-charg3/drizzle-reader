@@ -191,7 +191,10 @@ export default function LibraryGrid({
           title={isDark ? "Light mode" : "Dark mode"}
         >
           {/* Only render icon after mount to avoid hydration mismatch */}
-          {mounted && (isDark ? <Sun size={16} /> : <Moon size={16} />)}
+                          <div className="relative w-4 h-4 flex items-center justify-center">
+                  <Sun size={16} className={`absolute transition-all duration-300 ${isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 rotate-90'}`} />
+                  <Moon size={16} className={`absolute transition-all duration-300 ${!isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 -rotate-90'}`} />
+                </div>
         </button>
 
         <button
