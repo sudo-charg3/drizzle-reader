@@ -46,5 +46,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/library/:path*', '/reader/:path*'],
+  matcher: ['/', '/library/:path*', '/reader/:path*'],
 };
