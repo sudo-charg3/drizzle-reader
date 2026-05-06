@@ -16,6 +16,7 @@ export async function GET(request: Request) {
       // ADD THIS LINE to see the exact error in Vercel logs
       console.error("Supabase Auth Error:", error.message, error.name)
     }
+    return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
   }
 
   // Fallback: Check if we already have a session anyway
