@@ -10,11 +10,11 @@ export async function middleware(request: NextRequest) {
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 
     const supabase = createServerClient(
-      supabaseUrl,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
+      supabaseUrl!,
+      supabaseKey!,
       {
         cookies: {
           getAll() {
@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
     const { data: { session } } = await supabase.auth.getSession();
 
     const isProtected = request.nextUrl.pathname.startsWith('/library') ||
-                        request.nextUrl.pathname.startsWith('/reader');
+      request.nextUrl.pathname.startsWith('/reader');
 
     if (isProtected && !session) {
       return NextResponse.redirect(new URL('/login', request.url));
