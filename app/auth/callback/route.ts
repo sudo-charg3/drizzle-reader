@@ -12,6 +12,10 @@ export async function GET(request: Request) {
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`)
     }
+    else {
+      // ADD THIS LINE to see the exact error in Vercel logs
+      console.error("Supabase Auth Error:", error.message, error.name)
+    }
   }
 
   // Fallback: Check if we already have a session anyway
