@@ -38,10 +38,26 @@ export default function SyncIndicator() {
 
   return (
     <div className="fixed top-4 right-4 z-[9999] flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm text-xs font-['DM_Sans'] text-gray-700 border border-gray-100">
-      {status === 'syncing' && <><CloudLightning size={14} className="text-blue-500 animate-pulse" /> Syncing...</>}
-      {status === 'offline' && <><CloudOff size={14} className="text-gray-400" /> Offline</>}
-      {status === 'error' && <><CloudOff size={14} className="text-red-500" /> Sync Error</>}
-      {status === 'synced' && <><Cloud size={14} className="text-green-500" /> Synced</>}
+      {status === 'syncing' && (
+        <span key="syncing" className="flex items-center gap-2">
+          <CloudLightning size={14} className="text-blue-500 animate-pulse" /> Syncing...
+        </span>
+      )}
+      {status === 'offline' && (
+        <span key="offline" className="flex items-center gap-2">
+          <CloudOff size={14} className="text-gray-400" /> Offline
+        </span>
+      )}
+      {status === 'error' && (
+        <span key="error" className="flex items-center gap-2">
+          <CloudOff size={14} className="text-red-500" /> Sync Error
+        </span>
+      )}
+      {status === 'synced' && (
+        <span key="synced" className="flex items-center gap-2">
+          <Cloud size={14} className="text-green-500" /> Synced
+        </span>
+      )}
     </div>
   );
 }

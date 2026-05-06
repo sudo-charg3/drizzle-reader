@@ -13,13 +13,13 @@ export default function OfflineAuthProvider({ children }: { children: React.Reac
     const checkAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        if (!session && window.location.pathname !== '/login') {
           router.push('/login');
         }
       } catch (err) {
         // Fallback to offline check or assume logged out
         const stored = localStorage.getItem('drizzle-auth');
-        if (!stored) router.push('/login');
+        if (!stored && window.location.pathname !== '/login') router.push('/login');
       } finally {
         setIsReady(true);
       }

@@ -123,18 +123,27 @@ export default function LibraryGrid({
     loadLocalOnly();
 
     // Supabase realtime
-    const channel = supabase.channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pdfs' }, () => {
-        router.refresh();
-      })
-      .subscribe();
+    let channel: any;
+    try {
+      channel = supabase.channel('library-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pdfs' }, () => {
+          router.refresh();
+        })
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.warn('Realtime subscription failed (likely permissions).');
+          }
+        });
+    } catch (err) {
+      console.error('Failed to setup realtime:', err);
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [supabase, router]);
 
-  const totalBytes = pdfs.reduce(
+  const totalBytes = (pdfs || []).reduce(
     (acc, pdf) => acc + (pdf.file_size_bytes || 0),
     0
   );
@@ -359,7 +368,7 @@ export default function LibraryGrid({
                       </div>
                       {m.isBookmark && (
                         <div className="text-xs opacity-70 flex items-center gap-1.5 font-medium mb-1" style={{ color: "var(--text-color)" }}>
-                          <Bookmark size={12} className="text-rose-500" fill="currentColor"/> Bookmark
+                          <Bookmark key="bookmark-icon" size={12} className="text-rose-500" fill="currentColor"/> Bookmark
                         </div>
                       )}
                       {(m.note || m.textNote) && (
