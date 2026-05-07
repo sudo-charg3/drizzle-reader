@@ -8,7 +8,7 @@ import { useEffect, useRef, memo } from "react";
  * Detect whether a string looks like it contains LaTeX math, Markdown table
  * syntax, Mermaid diagram blocks, or Markdown structural syntax.
  */
-function classifyParagraph(text: string): "mermaid" | "table" | "markdown" | "latex" | "plain" {
+const classifyParagraph = (text: string): "mermaid" | "table" | "markdown" | "latex" | "plain" => {
   const t = text.trim();
 
   // Mermaid fenced blocks
@@ -47,16 +47,16 @@ function classifyParagraph(text: string): "mermaid" | "table" | "markdown" | "la
   }
 
   return "plain";
-}
+};
 
 /** Strip optional ``` fences from a mermaid block */
-function extractMermaidCode(text: string): string {
+const extractMermaidCode = (text: string): string => {
   return text
     .replace(/^```mermaid\s*/i, "")
     .replace(/^```\s*/i, "")
     .replace(/```\s*$/, "")
     .trim();
-}
+};
 
 // ─── Sub-renderers ───────────────────────────────────────────────────────────
 
@@ -139,7 +139,7 @@ function LatexParagraph({ text }: { text: string }) {
   return (
     <div
       ref={ref}
-      className="katex-paragraph"
+      className="katex-paragraph animate-in fade-in slide-in-from-bottom-1 duration-700"
       style={{ marginBottom: "1.5em", lineHeight: "inherit", color: "inherit", fontFamily: "inherit" }}
     />
   );
@@ -161,8 +161,15 @@ function MarkdownParagraph({ text }: { text: string }) {
   return (
     <div
       ref={ref}
-      className="markdown-paragraph rich-markdown"
-      style={{ marginBottom: "1.5em", lineHeight: "inherit", color: "inherit", fontFamily: "inherit" }}
+      className="markdown-paragraph rich-markdown animate-in fade-in slide-in-from-bottom-1 duration-700"
+      style={{ 
+        marginBottom: "1.5em", 
+        lineHeight: "inherit", 
+        color: "inherit", 
+        fontFamily: "inherit",
+        textAlign: "justify",
+        hyphens: "auto"
+      }}
     />
   );
 }
@@ -199,7 +206,7 @@ function MermaidBlock({ text, blockId }: { text: string; blockId: string }) {
   return (
     <div
       ref={ref}
-      className="mermaid-block"
+      className="mermaid-block animate-in fade-in slide-in-from-bottom-2 duration-1000"
       style={{
         marginBottom: "1.5em",
         padding: "1.5rem",

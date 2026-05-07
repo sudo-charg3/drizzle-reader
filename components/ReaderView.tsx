@@ -433,7 +433,7 @@ export default function ReaderView({
           // we render the ENTIRE page as a high-DPI canvas image. This is 
           // the only way to preserve 2D mathematical layouts perfectly.
           
-          function isMathBlockHeuristic(para: string): boolean {
+          const isMathBlockHeuristic = (para: string): boolean => {
             // Check for math symbols, matrix brackets, dots, fractions, etc.
             const mathSymbols = (para.match(/[··⋅×÷∑∫√∂→←↔≈≠≤≥±∞∈∉⊂⊃∪∩∧∨¬∀∃=\[\]]/g) || []).length;
             const ellipsis = (para.match(/[…⋯⋮⋱]|\.{3}/g) || []).length;
@@ -446,7 +446,7 @@ export default function ReaderView({
             const score = mathSymbols * 4 + ellipsis * 5 + fraction * 3 + isolated * 2 + multiSpaces * 5;
             // If the block is very mathy, return true
             return score > 6 && (para.length === 0 || score / para.length > 0.07);
-          }
+          };
 
           const pageHasMath = textBlocks.some(tb => 
             tb.paragraphs.some((p: string) => isMathBlockHeuristic(p))
@@ -666,8 +666,8 @@ export default function ReaderView({
               overflow: "hidden"
             }}
           >
-            <div className="absolute top-4 right-4 bg-black/60 text-white text-[0.7rem] px-[10px] py-[3px] rounded-[20px] backdrop-blur-md z-10 font-sans tracking-wide">
-              {p.isMathPage ? "Math" : "Scanned"}
+            <div className="absolute top-4 right-4 bg-black/60 text-white text-[0.65rem] px-[12px] py-[4px] rounded-[20px] backdrop-blur-lg z-10 font-sans tracking-widest uppercase border border-white/10 shadow-lg animate-in fade-in zoom-in duration-500">
+              {p.isMathPage ? "Math Mode" : "Scanned"}
             </div>
             {!p.isLoaded && !p.dataUrl ? (
               <div className="w-full bg-gray-200/20 animate-pulse rounded-2xl" style={{ height: "600px" }} />
@@ -987,6 +987,9 @@ export default function ReaderView({
         .page-content p {
           margin-bottom: 1.5em;
           text-align: justify;
+          text-justify: inter-word;
+          hyphens: auto;
+          -webkit-hyphens: auto;
         }
         input[type=range]::-webkit-slider-thumb {
           -webkit-appearance: none;

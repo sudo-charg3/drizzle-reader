@@ -238,7 +238,7 @@ export default function HighlightPopover({ containerRef, saveSettings, highlight
     });
   }, [highlights, containerRef, activeMarkId]);
 
-  function getTextNodesInRange(range: Range) {
+  const getTextNodesInRange = (range: Range) => {
     let nodes = [], node = range.startContainer, endNode = range.endContainer;
     if (node === endNode) {
       if (node.nodeType === Node.TEXT_NODE) nodes.push({node, startOffset: range.startOffset, endOffset: range.endOffset});
@@ -252,7 +252,7 @@ export default function HighlightPopover({ containerRef, saveSettings, highlight
       else if (started) nodes.push({node: current, startOffset: 0, endOffset: current.nodeValue?.length || 0});
     }
     return nodes;
-  }
+  };
 
   const applyHighlight = (colorHex: string) => {
     if (!pendingRange) return;
