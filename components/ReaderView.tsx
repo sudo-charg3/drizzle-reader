@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import PageNavigator from "./PageNavigator";
 import SettingsPanel from "./SettingsPanel";
 import HighlightPopover from "./HighlightPopover";
+import dynamic from "next/dynamic";
+const RichTextRenderer = dynamic(() => import("./RichTextRenderer"), { ssr: false });
 import { minimalThemes, natureThemes } from "@/utils/themes";
 import * as pdfjsLib from "pdfjs-dist";
 import { Bookmark, X, MessageSquare } from "lucide-react";
@@ -331,13 +333,21 @@ export default function ReaderView({
             (r.canvasW / viewport.scale) * (r.canvasH / viewport.scale) > pageArea * 0.6
           );
 
+          // Scanned page (nearly no text, large image cover)
           if (totalChars < 20 && largeImageExists) {
-            htmlPages.push({
-              id: i,
-              isScanned: true,
-              isLoaded: false,
-              dataUrl: ''
-            });
+            htmlPages.push({ id: i, isScanned: true, isLoaded: false, dataUrl: '' });
+            continue;
+          }
+
+          // Math-heavy page: many center-dots, ellipsis, times-signs etc.
+          // These pages render as hi-DPI canvas images so matrices look right.
+          const allRawText = textContent.items.map((it: any) => it.str || '').join('');
+          const mathSymCount = (allRawText.match(/[··⋅×÷∑∫√∂→←↔≈≠≤≥±∞∈∉⊂⊃∪∩∧∨¬∀∃]/g) || []).length;
+          const ellipsisCount = (allRawText.match(/[…⋯⋮⋱]|\.{3}/g) || []).length;
+          const pageMathScore = mathSymCount * 3 + ellipsisCount * 4;
+          const pageMathRatio = totalChars > 0 ? pageMathScore / totalChars : 0;
+          if (pageMathRatio > 0.12 && pageMathScore > 8) {
+            htmlPages.push({ id: i, isScanned: true, isMathPage: true, isLoaded: false, dataUrl: '' });
             continue;
           }
 
@@ -354,27 +364,43 @@ export default function ReaderView({
             lastY: number | null = null,
             lastX: number | null = null,
             lastWidth: number | null = null,
-            currentBlockY: number | null = null;
+            currentBlockY: number | null = null,
+            blockMinY = 0,
+            blockMaxY = 0;
 
           for (const rawItem of items) {
             const item = rawItem as any;
             const text = item.str,
               currentY = item.transform[5],
               currentX = item.transform[4],
-              currentWidth = item.width;
+              currentWidth = item.width,
+              currentHeight = item.transform[3]; // Approx font height
             if (text === undefined) continue;
 
-            if (currentBlockY === null) currentBlockY = currentY;
+            if (currentBlockY === null) {
+              currentBlockY = currentY;
+              blockMinY = currentY;
+              blockMaxY = currentY + currentHeight;
+            }
 
             if (lastY !== null) {
               const yDiff = Math.abs(lastY - currentY);
               if (yDiff > 15) {
                 if (currentParagraph.trim()) {
-                  textBlocks.push({ type: 'text', y: viewport.viewBox[3] - currentBlockY!, paragraphs: [currentParagraph.trim()] });
+                  textBlocks.push({ 
+                    type: 'text', 
+                    y: viewport.viewBox[3] - currentBlockY!, 
+                    height: Math.abs(blockMaxY - blockMinY),
+                    paragraphs: [currentParagraph.trim()] 
+                  });
                 }
                 currentParagraph = text;
                 currentBlockY = currentY;
+                blockMinY = currentY;
+                blockMaxY = currentY + currentHeight;
               } else {
+                blockMinY = Math.min(blockMinY, currentY);
+                blockMaxY = Math.max(blockMaxY, currentY + currentHeight);
                 if (yDiff <= 5 && lastX !== null && lastWidth !== null) {
                   const expectedNextX = lastX + lastWidth;
                   if (currentX - expectedNextX > 2)
@@ -394,7 +420,47 @@ export default function ReaderView({
             lastWidth = currentWidth;
           }
           if (currentParagraph.trim() && currentBlockY !== null) {
-            textBlocks.push({ type: 'text', y: viewport.viewBox[3] - currentBlockY, paragraphs: [currentParagraph.trim()] });
+            textBlocks.push({ 
+              type: 'text', 
+              y: viewport.viewBox[3] - currentBlockY, 
+              height: Math.abs(blockMaxY - blockMinY),
+              paragraphs: [currentParagraph.trim()] 
+            });
+          }
+
+          // ── Whole-page Math Detection Heuristic ────────────────────────────
+          // If ANY block on the page looks like a matrix or complex equation,
+          // we render the ENTIRE page as a high-DPI canvas image. This is 
+          // the only way to preserve 2D mathematical layouts perfectly.
+          
+          function isMathBlockHeuristic(para: string): boolean {
+            // Check for math symbols, matrix brackets, dots, fractions, etc.
+            const mathSymbols = (para.match(/[··⋅×÷∑∫√∂→←↔≈≠≤≥±∞∈∉⊂⊃∪∩∧∨¬∀∃=\[\]]/g) || []).length;
+            const ellipsis = (para.match(/[…⋯⋮⋱]|\.{3}/g) || []).length;
+            const fraction = (para.match(/[0-9]+\s*[\/]\s*[0-9]+/g) || []).length;
+            // Isolated single letters/numbers with spaces (matrix columns)
+            const isolated = (para.match(/(^|\s)([0-9]|[a-z])(\s|$)/gi) || []).length;
+            // Characteristic matrix spacing (3+ spaces)
+            const multiSpaces = (para.match(/\s{3,}/g) || []).length;
+
+            const score = mathSymbols * 4 + ellipsis * 5 + fraction * 3 + isolated * 2 + multiSpaces * 5;
+            // If the block is very mathy, return true
+            return score > 6 && (para.length === 0 || score / para.length > 0.07);
+          }
+
+          const pageHasMath = textBlocks.some(tb => 
+            tb.paragraphs.some((p: string) => isMathBlockHeuristic(p))
+          );
+
+          if (pageHasMath) {
+            htmlPages.push({ 
+              id: i, 
+              isScanned: true, 
+              isMathPage: true, 
+              isLoaded: false, 
+              dataUrl: '' 
+            });
+            continue;
           }
 
           const imageBlocks = mergedRegions.map(r => ({
@@ -407,7 +473,7 @@ export default function ReaderView({
             dataUrl: '',
           }));
 
-          const allBlocks = [...textBlocks, ...imageBlocks].sort((a, b) => a.y - b.y);
+          const allBlocks = [...textBlocks, ...imageBlocks].sort((a: any, b: any) => a.y - b.y);
 
           const finalBlocks: any[] = [];
           for (const b of allBlocks) {
@@ -423,8 +489,9 @@ export default function ReaderView({
             }
           }
 
+          const needsImageLoad = finalBlocks.some((b: any) => b.type === 'image');
           if (finalBlocks.length > 0 || imageBlocks.length > 0) {
-            htmlPages.push({ id: i, blocks: finalBlocks, isLoaded: imageBlocks.length === 0 });
+            htmlPages.push({ id: i, blocks: finalBlocks, isLoaded: !needsImageLoad });
           }
         }
 
@@ -600,7 +667,7 @@ export default function ReaderView({
             }}
           >
             <div className="absolute top-4 right-4 bg-black/60 text-white text-[0.7rem] px-[10px] py-[3px] rounded-[20px] backdrop-blur-md z-10 font-sans tracking-wide">
-              Scanned
+              {p.isMathPage ? "Math" : "Scanned"}
             </div>
             {!p.isLoaded && !p.dataUrl ? (
               <div className="w-full bg-gray-200/20 animate-pulse rounded-2xl" style={{ height: "600px" }} />
@@ -625,6 +692,42 @@ export default function ReaderView({
             return validParas && validParas.length > 0;
           }).map((block: any, bIdx: number) => {
             if (block.type === 'image') {
+              // Math-crop blocks render inline (no card chrome) so equations
+              // flow naturally with the surrounding prose text.
+              if (block.isMathCrop) {
+                return (
+                  <div
+                    key={`math-crop-${p.id}-${bIdx}`}
+                    data-page-index={p.id}
+                    className="page-card math-crop-block w-full mb-4 rounded-lg overflow-hidden"
+                    style={{
+                      opacity: 0,
+                      transform: "translateY(30px)",
+                      transition: "opacity 0.8s ease, transform 0.8s ease",
+                      background: "transparent",
+                      border: "none",
+                      boxShadow: "none",
+                      padding: "0.5rem 0",
+                    }}
+                  >
+                    {!block.dataUrl ? (
+                      <div className="w-full bg-gray-200/10 animate-pulse" style={{ height: "60px", borderRadius: "4px" }} />
+                    ) : (
+                      <div className="math-crop-container relative group">
+                        <img
+                          src={block.dataUrl}
+                          className="max-w-full h-auto block mx-auto mix-blend-multiply dark:mix-blend-lighten contrast-[1.05]"
+                          style={{ maxHeight: "400px", objectFit: "contain" }}
+                          alt="Math expression"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-yellow-400/0 group-hover:bg-yellow-400/5 transition-colors pointer-events-none" />
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={`img-${p.id}-${bIdx}`}
@@ -676,9 +779,11 @@ export default function ReaderView({
                     textAlign: "left",
                   }}
                 >
-                   {cleanParagraphs.map((para: string, pIdx: number) => (
-                     <p key={pIdx}>{para}</p>
-                   ))}
+                  <RichTextRenderer
+                    paragraphs={cleanParagraphs}
+                    pageId={p.id}
+                    blockIdx={bIdx}
+                  />
                 </div>
                 {bIdx === p.blocks.length - 1 && (
                   <div
@@ -898,6 +1003,166 @@ export default function ReaderView({
         body.dark-theme mark {
           filter: brightness(0.88);
           color: #1a1a1a !important;
+        }
+
+        /* ── Rich Content: Markdown ── */
+        .rich-markdown h1, .rich-markdown h2, .rich-markdown h3,
+        .rich-markdown h4, .rich-markdown h5, .rich-markdown h6 {
+          font-family: var(--font-family);
+          color: var(--text-color);
+          margin: 1.2em 0 0.5em;
+          line-height: 1.3;
+          font-weight: 700;
+        }
+        .rich-markdown h1 { font-size: 1.9em; border-bottom: 2px solid rgba(0,0,0,0.08); padding-bottom: 0.25em; }
+        .rich-markdown h2 { font-size: 1.5em; border-bottom: 1px solid rgba(0,0,0,0.06); padding-bottom: 0.2em; }
+        .rich-markdown h3 { font-size: 1.25em; }
+        .rich-markdown h4 { font-size: 1.1em; }
+        .rich-markdown p  { margin-bottom: 1em; text-align: justify; color: var(--text-color); }
+        .rich-markdown ul, .rich-markdown ol {
+          padding-left: 1.8em;
+          margin-bottom: 1.2em;
+          color: var(--text-color);
+        }
+        .rich-markdown li { margin-bottom: 0.4em; line-height: 1.7; }
+        .rich-markdown strong { font-weight: 700; color: var(--text-color); }
+        .rich-markdown em { font-style: italic; color: var(--text-color); }
+        .rich-markdown code {
+          font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+          font-size: 0.88em;
+          background: rgba(0,0,0,0.06);
+          border-radius: 4px;
+          padding: 0.15em 0.4em;
+          color: var(--text-color);
+        }
+        body.dark-theme .rich-markdown code {
+          background: rgba(255,255,255,0.1);
+        }
+        .rich-markdown pre {
+          background: rgba(0,0,0,0.05);
+          border-radius: 10px;
+          padding: 1.2em 1.5em;
+          overflow-x: auto;
+          margin-bottom: 1.5em;
+          border: 1px solid rgba(0,0,0,0.06);
+        }
+        body.dark-theme .rich-markdown pre {
+          background: rgba(255,255,255,0.06);
+          border-color: rgba(255,255,255,0.08);
+        }
+        .rich-markdown pre code {
+          background: none;
+          padding: 0;
+          font-size: 0.875em;
+          line-height: 1.6;
+        }
+        .rich-markdown blockquote {
+          border-left: 4px solid rgba(0,0,0,0.15);
+          margin: 0 0 1.2em;
+          padding: 0.5em 1.2em;
+          color: var(--muted-color);
+          font-style: italic;
+          background: rgba(0,0,0,0.03);
+          border-radius: 0 8px 8px 0;
+        }
+        body.dark-theme .rich-markdown blockquote {
+          border-left-color: rgba(255,255,255,0.18);
+          background: rgba(255,255,255,0.04);
+        }
+        /* Markdown Tables */
+        .rich-markdown table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 1.5em;
+          font-size: 0.93em;
+          border-radius: 10px;
+          overflow: hidden;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+        }
+        .rich-markdown thead tr {
+          background: rgba(0,0,0,0.07);
+        }
+        body.dark-theme .rich-markdown thead tr {
+          background: rgba(255,255,255,0.1);
+        }
+        .rich-markdown th {
+          padding: 0.7em 1em;
+          text-align: left;
+          font-weight: 600;
+          color: var(--text-color);
+          border-bottom: 2px solid rgba(0,0,0,0.12);
+          white-space: nowrap;
+        }
+        body.dark-theme .rich-markdown th {
+          border-bottom-color: rgba(255,255,255,0.12);
+        }
+        .rich-markdown td {
+          padding: 0.6em 1em;
+          color: var(--text-color);
+          border-bottom: 1px solid rgba(0,0,0,0.06);
+          vertical-align: top;
+          line-height: 1.6;
+        }
+        body.dark-theme .rich-markdown td {
+          border-bottom-color: rgba(255,255,255,0.06);
+        }
+        .rich-markdown tbody tr:hover {
+          background: rgba(0,0,0,0.025);
+        }
+        body.dark-theme .rich-markdown tbody tr:hover {
+          background: rgba(255,255,255,0.03);
+        }
+        .rich-markdown a {
+          color: #5a8dee;
+          text-decoration: underline;
+          text-underline-offset: 3px;
+        }
+        body.dark-theme .rich-markdown a {
+          color: #7aaeff;
+        }
+        .rich-markdown hr {
+          border: none;
+          border-top: 2px solid rgba(0,0,0,0.08);
+          margin: 1.5em 0;
+        }
+
+        /* ── Rich Content: KaTeX ── */
+        .katex-display-wrapper {
+          display: flex;
+          justify-content: center;
+          padding: 1.2em 0;
+          overflow-x: auto;
+          margin-bottom: 0.5em;
+        }
+        .katex-display-wrapper .katex-display {
+          margin: 0;
+        }
+        .katex-error {
+          color: #cc2222;
+          font-family: monospace;
+          font-size: 0.85em;
+          word-break: break-all;
+        }
+        body.dark-theme .katex-error {
+          color: #ff7070;
+        }
+        .katex { color: var(--text-color); font-size: 1.05em; }
+
+        /* ── Rich Content: Mermaid ── */
+        .mermaid-block svg {
+          max-width: 100%;
+          height: auto;
+        }
+        .mermaid-block .mermaid-error {
+          font-family: monospace;
+          font-size: 0.8em;
+          color: var(--muted-color);
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+        body.dark-theme .mermaid-block {
+          background: rgba(255,255,255,0.04) !important;
+          border-color: rgba(255,255,255,0.07) !important;
         }
       `}</style>
     </>
