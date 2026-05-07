@@ -127,7 +127,7 @@ Contributions are what make open source beautiful. Whether it's a new theme, a b
 
 ## 📜 License
 
-MIT © [Your Name](https://github.com/yourusername)
+MIT © [Nityam Gandhi](https://github.com/sudo-charg3)
 
 ---
 
