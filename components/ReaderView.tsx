@@ -9,7 +9,9 @@ import dynamic from "next/dynamic";
 const RichTextRenderer = dynamic(() => import("./RichTextRenderer"), { ssr: false });
 import { minimalThemes, natureThemes } from "@/utils/themes";
 import * as pdfjsLib from "pdfjs-dist";
-import { Bookmark, X, MessageSquare } from "lucide-react";
+import { Bookmark, X, MessageSquare, List } from "lucide-react";
+import { extractTablesFromItems, extractCustomOutline } from "@/utils/pdfTableExtractor";
+import OutlineSidebar from "./OutlineSidebar";
 
 export default function ReaderView({
   pdf,
@@ -51,6 +53,8 @@ export default function ReaderView({
     initialSettings?.highlights || []
   );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [outline, setOutline] = useState<any[] | null>(null);
+  const [isOutlineOpen, setIsOutlineOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const highestPageReadRef = useRef(initialSettings?.pages_read || 1);
@@ -143,21 +147,20 @@ export default function ReaderView({
     const root = document.documentElement;
     const bokeh = document.getElementById("bokeh-bg");
 
-    if (minimal) {
-      document.body.style.backgroundImage = "none";
-      document.body.style.backgroundColor = minimal.bgColor;
-      root.style.setProperty("--bg-color", minimal.bgColor);
-      root.style.setProperty("--card-bg", minimal.cardBg);
-      root.style.setProperty("--text-color", minimal.textColor);
-      root.style.setProperty("--muted-color", minimal.mutedColor);
-      root.style.setProperty("--card-border", "transparent");
-      document.body.classList.remove("glass-theme");
-      // Hide bokeh for dark minimal themes — flat dark bg looks cleaner without blobs
-      if (bokeh) bokeh.style.display = ["dusk", "sage"].includes(themeId) ? "none" : "block";
-      if (["dusk", "sage"].includes(themeId)) document.body.classList.add("dark-theme");
-      else document.body.classList.remove("dark-theme");
-    } else {
-      const nature = natureThemes.find((t) => t.id === themeId);
+      if (minimal) {
+        document.body.style.backgroundImage = "none";
+        document.body.style.backgroundColor = minimal.bgColor;
+        root.style.setProperty("--bg-color", minimal.bgColor);
+        root.style.setProperty("--card-bg", minimal.cardBg);
+        root.style.setProperty("--text-color", minimal.textColor);
+        root.style.setProperty("--muted-color", minimal.mutedColor);
+        root.style.setProperty("--card-border", "transparent");
+        
+        // Bokeh blobs add lightness — hide on ALL dark themes
+        const isDark = ["dusk", "sage"].includes(themeId);
+        if (bokeh) bokeh.style.display = isDark ? "none" : "block";
+      } else {
+        const nature = natureThemes.find((t) => t.id === themeId);
       if (nature) {
         document.body.style.backgroundColor = nature.bgColor;
         document.body.style.backgroundImage = `url("data:image/svg+xml;utf8,${encodeURIComponent(nature.pattern)}")`;
@@ -170,16 +173,15 @@ export default function ReaderView({
         root.style.setProperty("--card-bg", nature.cardBg);
         root.style.setProperty("--text-color", nature.textColor);
         root.style.setProperty("--muted-color", nature.mutedColor);
-        root.style.setProperty(
-          "--card-border",
-          nature.dark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.55)"
-        );
-        document.body.classList.add("glass-theme");
-        if (bokeh) bokeh.style.display = "none";
-        if (nature.dark) document.body.classList.add("dark-theme");
-        else document.body.classList.remove("dark-theme");
+          root.style.setProperty(
+            "--card-border",
+            nature.dark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.55)"
+          );
+          // Hide bokeh on dark nature themes (forest, autumn, ocean, space, aurora)
+          // — blobs add unwanted brightness on dark backgrounds
+          if (bokeh) bokeh.style.display = nature.dark ? "none" : "block";
+        }
       }
-    }
 
     const fontMap: Record<string, string> = {
       lora: "'Lora', serif",
@@ -224,13 +226,56 @@ export default function ReaderView({
         if (isMounted) setTotalPages(total);
         if (pdf.page_count !== total) saveSettings({ totalPages: total });
 
-        const htmlPages: any[] = [];
+        try {
+          // Load the built-in PDF outline (bookmarks) AND the content-parsed TOC.
+          // Use whichever has MORE entries — built-in bookmarks are often sparse
+          // (e.g. only 2 top-level chapters) while the actual TOC page has every section.
+          const pdfOutline = await pdfDoc.getOutline();
+          const builtInCount = pdfOutline?.length ?? 0;
+          if (builtInCount > 0 && isMounted) setOutline(pdfOutline); // show immediately
+
+          extractCustomOutline(pdfDoc).then(custom => {
+            if (!isMounted) return;
+            if (custom && custom.length > builtInCount) {
+              // Content-parsed TOC has more sections → use it
+              setOutline(custom);
+            } else if (custom && custom.length > 0 && builtInCount === 0) {
+              setOutline(custom);
+            }
+          });
+        } catch (e) {
+            console.error("Outline extraction failed", e);
+        }
+
+          const htmlPages: any[] = [];
+          const allOutlineEntries: { title: string; pageIndex: number }[] = [];
         for (let i = 1; i <= total; i++) {
           if (!isMounted) break;
           setLoadingText(`Parsing page ${i} of ${total}...`);
           const page = await pdfDoc.getPage(i);
           const textContent = await page.getTextContent();
           
+          // Debug: save items for pages containing INDEX
+          {
+            const pageText = (textContent.items as any[]).map((t:any) => t.str).join(" ").toUpperCase();
+            if (pageText.includes("S.NO") || pageText.includes("EXPERIMENT NAME")) {
+               try {
+                 const summaryItems = (textContent.items as any[]).map((item:any) => ({
+                   str: item.str,
+                   x: Math.round(item.transform[4]),
+                   y: Math.round(item.transform[5]),
+                   w: Math.round(item.width),
+                   h: Math.round(item.transform[3]),
+                 }));
+                 await fetch('/api/debug', {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ page: i, items: summaryItems })
+                 });
+               } catch(e) { console.error(e); }
+            }
+          }
+
           const viewport = page.getViewport({ scale: 2.0 });
           const OPS = pdfjsLib.OPS;
 
@@ -351,7 +396,118 @@ export default function ReaderView({
             continue;
           }
 
-          const items = textContent.items;
+          let items = textContent.items;
+          const { extractedTableBlocks, tableItemsToExclude, outlineEntries } = extractTablesFromItems(items, viewport.viewBox[3]);
+          if (outlineEntries && outlineEntries.length > 0) {
+            allOutlineEntries.push(...outlineEntries);
+          }
+          
+          items = items.filter((i: any) => !tableItemsToExclude.has(i));
+          
+          const fontSizes = items.map((i: any) => i.transform ? i.transform[3] : 12).sort((a: any, b: any) => a - b);
+          const medianFontSize = fontSizes[Math.floor(fontSizes.length / 2)] || 12;
+
+          // ── Formula / Fraction Region Detection ──────────────────────────────
+          // Fractions, subscripts, and inline equations extract as garbled flat text
+          // because PDF text items sit at multiple Y positions (numerator/denominator).
+          // Strategy: detect clusters of items spanning multiple Y levels in a narrow
+          // band, identify them as formula regions, crop them from the canvas, and
+          // remove the garbled text items from the text flow.
+          const formulaItemsToExclude = new Set<any>();
+          const formulaBlocks: any[] = [];
+
+          const itemsForFormulaDetection = [...items]
+            .filter(it => (it as any).str?.trim())
+            .sort((a: any, b: any) => b.transform[5] - a.transform[5]);
+
+          let fIdx = 0;
+          while (fIdx < itemsForFormulaDetection.length) {
+            const topY = (itemsForFormulaDetection[fIdx] as any).transform[5];
+            let eIdx = fIdx;
+            // Narrower 26px Y band — prevents capturing the text line above/below
+            while (eIdx < itemsForFormulaDetection.length &&
+              Math.abs((itemsForFormulaDetection[eIdx] as any).transform[5] - topY) <= 26) {
+              eIdx++;
+            }
+            const band = itemsForFormulaDetection.slice(fIdx, eIdx) as any[];
+            fIdx = eIdx;
+
+            if (band.length < 3) continue;
+
+            // Reject if any single item is long text (regular sentence fragment)
+            const hasLongItem = band.some(it => (it.str || '').trim().length > 18);
+            if (hasLongItem) continue;
+
+            const ys = band.map(it => it.transform[5]);
+            const distinctYs = new Set(ys.map((y: number) => Math.round(y))).size;
+            const yRange = Math.max(...ys) - Math.min(...ys);
+
+            // Need multiple Y levels within a moderate range (fraction/subscript)
+            if (distinctYs < 2 || yRange < 4 || yRange > 55) continue;
+
+            const bandText = band.map(it => it.str || '').join('');
+            if (bandText.length > 80) continue;
+
+            // Must have a formula operator OR a subscript-sized font
+            const hasOperator = band.some(it => /^[=\/\+\-\(\)\[\]\{\}]$/.test((it.str || '').trim()));
+            const hasSubscript = band.some(it => it.transform[3] > 0 && it.transform[3] < medianFontSize * 0.82);
+            const avgItemLen = band.length > 0 ? bandText.length / band.length : 99;
+
+            if ((!hasOperator && !hasSubscript) || avgItemLen > 12) continue;
+
+            // Build canvas crop — use actual item heights, not medianFontSize
+            const FSCALE = 2.0;
+            const FPAD_X = 10; // generous horizontal padding
+            const FPAD_Y = 5;  // tight vertical padding (avoid capturing adjacent text lines)
+            const xs = band.map(it => it.transform[4]);
+            const ws = band.map(it => it.width || 8);
+            const hs = band.map(it => it.transform[3]); // per-item font height
+
+            // Reject axis/chart labels: items spread across more than 35% of page width
+            // (chart tick labels span full axis; real formulas are compact)
+            const pageWidth = viewport.viewBox[2] || 612;
+            const spanX = Math.max(...xs.map((x, i) => x + (ws[i] || 8))) - Math.min(...xs);
+            if (spanX > pageWidth * 0.35) continue;
+
+            // Reject if all items are very short numeric/punctuation tokens
+            // (axis ticks like "-20", "-10", "0", "10", "." etc.)
+            const nonNumericItems = band.filter(it => !/^-?\d*\.?\d*$/.test((it.str || '').trim()));
+            if (nonNumericItems.length === 0) continue;
+
+            const fMinX = Math.max(0, Math.min(...xs) - FPAD_X);
+            const fMaxX = Math.max(...xs.map((x, i) => x + (ws[i] || 8))) + FPAD_X;
+
+            // Bottom of crop: lowest Y - padding (PDF Y is bottom-up, so min Y = visual bottom)
+            const fMinPdfY = Math.min(...ys) - FPAD_Y;
+            // Top of crop: highest Y + actual item height at that position + tight padding
+            const topItemIdx = ys.indexOf(Math.max(...ys));
+            const topItemH = hs[topItemIdx] || medianFontSize;
+            const fMaxPdfY = Math.max(...ys) + topItemH + FPAD_Y;
+
+            const canvasX = Math.max(0, fMinX * FSCALE);
+            const canvasY = Math.max(0, (viewport.viewBox[3] - fMaxPdfY) * FSCALE);
+            const canvasW = (fMaxX - fMinX) * FSCALE;
+            const canvasH = (fMaxPdfY - fMinPdfY) * FSCALE;
+
+            if (canvasW < 20 || canvasH < 8) continue;
+
+            formulaBlocks.push({
+              type: 'image',
+              isMathCrop: true,
+              y: viewport.viewBox[3] - fMaxPdfY,
+              canvasX,
+              canvasY,
+              canvasW,
+              canvasH,
+              dataUrl: '',
+            });
+            band.forEach(it => formulaItemsToExclude.add(it));
+          }
+
+          // Remove formula items from the main text flow
+          items = items.filter((i: any) => !formulaItemsToExclude.has(i));
+
+
           items.sort((a: any, b: any) => {
             const yA = a.transform[5],
               yB = b.transform[5];
@@ -359,14 +515,94 @@ export default function ReaderView({
             return yB - yA;
           });
 
-          let textBlocks: any[] = [];
+          let textBlocks: any[] = [...extractedTableBlocks];
           let currentParagraph = "",
             lastY: number | null = null,
             lastX: number | null = null,
             lastWidth: number | null = null,
+            lastFontSize: number = 0,
             currentBlockY: number | null = null,
             blockMinY = 0,
-            blockMaxY = 0;
+            blockMaxY = 0,
+            maxFontSize = 0;
+
+          const flushParagraph = () => {
+            let text = currentParagraph.trim();
+            if (text && currentBlockY !== null) {
+              // ── Bullet handling ──────────────────────────────────────────────────
+              // PDF bullet items often get merged inline (small Y gap between bullets).
+              // Must handle TWO cases:
+              //   (a) Bullet mid-text (items merged): "text ▶ next item" → "text\n- next item"
+              //   (b) Bullet at start of line: "▶ item" → "- item"
+              // Order matters: do (a) FIRST so the char is consumed, then (b) cleans up the rest.
+              const MID_BULLET_RE = /(\S)\s*([\uF000-\uF0FF\u2022\u25CF\u25CB\u25A0\u25A1\u25AA\u25AB\u2023\u2043\u25B6\u25B8\u25BA\u25B9\u25B7\u25C6\u25E6\u2605\u2606\u27A4\u27B8\u25BB\u25C3\u25C1])\s*/g;
+              const ALL_BULLET_RE = /[\uF000-\uF0FF\u2022\u25CF\u25CB\u25A0\u25A1\u25AA\u25AB\u2023\u2043\u25B6\u25B8\u25BA\u25B9\u25B7\u25C6\u25E6\u2605\u2606\u27A4\u27B8\u25BB\u25C3\u25C1]/g;
+              text = text.replace(MID_BULLET_RE, '$1\n- ');  // (a) mid-text → new line
+              text = text.replace(ALL_BULLET_RE, '- ');       // (b) start-of-line
+
+              // Also handle any leftover literal ▶/►/▸ that slipped through (UTF-8 literal)
+              text = text.replace(/(\S)\s*([▶►▸▹▷])\s*/g, '$1\n- ');
+              text = text.replace(/[▶►▸▹▷]/g, '- ');
+
+              // Force separate headings onto new lines if PDF extracted them consecutively
+              // 1. Matches headings occurring mid-sentence (e.g. "environment. 1.1.3 TITLE")
+              text = text.replace(/(\S)\s+(?=\d+\.\d+(\.\d+)*\s+[A-Z])/g, '$1\n\n');
+              text = text.replace(/(\S)\s+(?=\([a-z0-9ivxlcdm]+\)\s+[A-Z])/gi, '$1\n\n');
+              
+              // 2. Matches numbered lists occurring mid-sentence (e.g. "segments. 1. Atmosphere")
+              text = text.replace(/(\S)\s+(?=\d+\.\s+[A-Z])/g, '$1\n\n');
+
+              // 3. Matches ALL CAPS headings where normal text follows on the same line (e.g. "1.1.2 TITLE Text starts")
+              text = text.replace(/(^\d+\.\d+(\.\d+)*\s+[A-Z\s]+[A-Z])\s+(?=[A-Z][a-z]|[a-z])/g, '$1\n\n');
+
+              text = text.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+
+              // Process headings per line to prevent Markdown bolding from failing across newlines
+              text = text.split('\n\n').map(line => {
+                const t = line.trim();
+                if (!t) return line;
+
+                // Extract per-line font size embedded as ~~FONTSIZE:N~~ marker
+                const fontMarkerMatch = t.match(/^~~FONTSIZE:([\d.]+)~~\s*/);
+                const segFontSize = fontMarkerMatch ? parseFloat(fontMarkerMatch[1]) : maxFontSize;
+                const cleanT = fontMarkerMatch ? t.slice(fontMarkerMatch[0].length).trim() : t;
+                if (!cleanT) return '';
+
+                // If it's a numbered list item that acts like an inline definition (e.g. "1. Atmosphere- Blanket of gases")
+                // We intercept it to ONLY bold the prefix part up to the hyphen/colon
+                const prefixMatch = cleanT.match(/^((?:\d+\.\d+(?:\.\d+)*|\d+\.|\([a-z0-9ivxlcdm]+\))\s+.*?)([\-\:])\s+([A-Za-z].*)$/i);
+                if (prefixMatch && prefixMatch[1].length < 60) {
+                  return `**${prefixMatch[1].trim().toUpperCase()}${prefixMatch[2]}** ${prefixMatch[3]}`;
+                }
+
+                const isAllCaps = cleanT === cleanT.toUpperCase() && /[A-Z]/.test(cleanT);
+                const isHeading =
+                  // Use THIS segment's font size, not the block max
+                  (segFontSize > medianFontSize * 1.15 && cleanT.length < 120) ||
+                  (/^\d+\.\d+(\.\d+)*\s+[A-Z]/.test(cleanT) && cleanT.length < 120) ||
+                  (/^\d+\.\s+[A-Z]/.test(cleanT) && cleanT.length < 120) ||
+                  (/^\([a-z0-9ivxlcdm]+\)\s+[A-Z]/i.test(cleanT) && cleanT.length < 120) ||
+                  (isAllCaps && cleanT.length < 60 && cleanT.length > 3) ||
+                  (/^(CHAPTER|UNIT)[\s\-]*[0-9A-Z]+/i.test(cleanT) && cleanT.length < 120) ||
+                  (/:\-?$/.test(cleanT) && cleanT.length < 120);
+
+                if (isHeading) {
+                  return `**${cleanT.toUpperCase()}**`;
+                }
+                return cleanT;
+              }).filter(s => s !== '').join('\n\n');
+
+              textBlocks.push({ 
+                type: 'text', 
+                y: viewport.viewBox[3] - currentBlockY, 
+                height: Math.abs(blockMaxY - blockMinY),
+                paragraphs: [text] 
+              });
+            }
+            currentParagraph = "";
+            currentBlockY = null;
+            maxFontSize = 0;
+          };
 
           for (const rawItem of items) {
             const item = rawItem as any;
@@ -383,21 +619,52 @@ export default function ReaderView({
               blockMaxY = currentY + currentHeight;
             }
 
+            maxFontSize = Math.max(maxFontSize, currentHeight);
+
             if (lastY !== null) {
               const yDiff = Math.abs(lastY - currentY);
-              if (yDiff > 15) {
-                if (currentParagraph.trim()) {
-                  textBlocks.push({ 
-                    type: 'text', 
-                    y: viewport.viewBox[3] - currentBlockY!, 
-                    height: Math.abs(blockMaxY - blockMinY),
-                    paragraphs: [currentParagraph.trim()] 
-                  });
-                }
-                currentParagraph = text;
+              
+              const isLineHeading = 
+                (/^\d+\.\d+(\.\d+)*(\s|$)/.test(text.trim())) ||
+                (/^\d+\.\s+[A-Z]/.test(text.trim())) ||
+                (/^\([a-z0-9ivxlcdm]+\)(\s|$)/i.test(text.trim())) ||
+                (/^(CHAPTER|UNIT)[\s\-]*[0-9A-Z]+/i.test(text.trim())) ||
+                (/:\-?$/.test(text.trim()));
+              
+              const isBullet = /^[\uF000-\uF0FF\u2022\u25CF\u25CB\u25A0\u25A1\u25AA\u25AB\u2023\u2043\u25B6\u25B8\u25BA\u25C6\u25E6\u27A4\u27B8▶►▸▹▷-]/.test(text.trim());
+
+              const endsWithPunctuation = !currentParagraph.trim() || /[.:?!"\])]$/.test(currentParagraph.trim());
+
+              const lastWasHeading = 
+                currentParagraph && 
+                ((/:\-?$/.test(currentParagraph.trim()) && currentParagraph.trim().length < 120) || 
+                 (/^\d+\.\s+[A-Z]/.test(currentParagraph.trim()) && currentParagraph.trim().length < 120) ||
+                 (/^\d+\.\d+(\.\d+)*\s+[A-Z]/.test(currentParagraph.trim()) && currentParagraph.trim().length < 120) ||
+                 (currentParagraph.trim() === currentParagraph.trim().toUpperCase() && currentParagraph.trim().length > 3 && currentParagraph.trim().length < 60));
+
+              // Enforce line breaks on headings or significant spacing
+              // Only treat as a line heading if the previous text actually ended a sentence
+              const isBiggerFont = currentHeight > medianFontSize * 1.15 && currentHeight > lastFontSize * 1.15;
+              const isSmallerFont = lastFontSize > medianFontSize * 1.15 && currentHeight < lastFontSize * 0.85;
+
+              // Force a new block when font size jumps up (heading after body) or down (body after heading)
+              if ((isBiggerFont || isSmallerFont) && currentParagraph.trim() && yDiff > 2) {
+                flushParagraph();
+                currentParagraph = `~~FONTSIZE:${currentHeight}~~ ${text}`;
                 currentBlockY = currentY;
                 blockMinY = currentY;
                 blockMaxY = currentY + currentHeight;
+                maxFontSize = currentHeight;
+              } else if (yDiff > Math.max(30, currentHeight * 2.5) || (yDiff > 5 && ((isLineHeading && endsWithPunctuation) || lastWasHeading))) {
+                flushParagraph();
+                // Embed font size marker so the flush correctly detects this as heading
+                currentParagraph = currentHeight > medianFontSize * 1.15
+                  ? `~~FONTSIZE:${currentHeight}~~ ${text}`
+                  : text;
+                currentBlockY = currentY;
+                blockMinY = currentY;
+                blockMaxY = currentY + currentHeight;
+                maxFontSize = currentHeight;
               } else {
                 blockMinY = Math.min(blockMinY, currentY);
                 blockMaxY = Math.max(blockMaxY, currentY + currentHeight);
@@ -407,71 +674,45 @@ export default function ReaderView({
                     currentParagraph += " " + text;
                   else currentParagraph += text;
                 } else {
-                  if (currentParagraph.trim() && !currentParagraph.endsWith("-"))
-                    currentParagraph += " " + text;
-                  else if (currentParagraph.endsWith("-"))
-                    currentParagraph = currentParagraph.slice(0, -1) + text;
-                  else currentParagraph += text;
+                  if (isBullet) {
+                     // If it's a new bullet, start it on a new line within the same paragraph block
+                     // Use \n\n if transitioning from text to bullet, or \n if continuing a list
+                     const prevIsBullet = currentParagraph && /^(\s*[-*+]\s|\s*\d+\.\s)/.test(currentParagraph.trim().split('\n').pop() || "");
+                     currentParagraph += (prevIsBullet ? "\n" : "\n\n") + text;
+                  } else {
+                    const trimmed = currentParagraph.trim();
+                    if (trimmed && !trimmed.endsWith("-"))
+                      currentParagraph += " " + text;
+                    else if (trimmed.endsWith("-")) {
+                      // Remove the trailing hyphen and any spaces after it
+                      currentParagraph = currentParagraph.replace(/-\s*$/, "") + text;
+                    }
+                    else currentParagraph += text;
+                  }
                 }
               }
             } else currentParagraph = text;
             lastY = currentY;
             lastX = currentX;
             lastWidth = currentWidth;
+            lastFontSize = currentHeight;
           }
-          if (currentParagraph.trim() && currentBlockY !== null) {
-            textBlocks.push({ 
-              type: 'text', 
-              y: viewport.viewBox[3] - currentBlockY, 
-              height: Math.abs(blockMaxY - blockMinY),
-              paragraphs: [currentParagraph.trim()] 
-            });
-          }
-
-          // ── Whole-page Math Detection Heuristic ────────────────────────────
-          // If ANY block on the page looks like a matrix or complex equation,
-          // we render the ENTIRE page as a high-DPI canvas image. This is 
-          // the only way to preserve 2D mathematical layouts perfectly.
+          flushParagraph();
           
-          const isMathBlockHeuristic = (para: string): boolean => {
-            // Check for math symbols, matrix brackets, dots, fractions, etc.
-            const mathSymbols = (para.match(/[··⋅×÷∑∫√∂→←↔≈≠≤≥±∞∈∉⊂⊃∪∩∧∨¬∀∃=\[\]]/g) || []).length;
-            const ellipsis = (para.match(/[…⋯⋮⋱]|\.{3}/g) || []).length;
-            const fraction = (para.match(/[0-9]+\s*[\/]\s*[0-9]+/g) || []).length;
-            // Isolated single letters/numbers with spaces (matrix columns)
-            const isolated = (para.match(/(^|\s)([0-9]|[a-z])(\s|$)/gi) || []).length;
-            // Characteristic matrix spacing (3+ spaces)
-            const multiSpaces = (para.match(/\s{3,}/g) || []).length;
+          textBlocks.sort((a, b) => a.y - b.y);
 
-            const score = mathSymbols * 4 + ellipsis * 5 + fraction * 3 + isolated * 2 + multiSpaces * 5;
-            // If the block is very mathy, return true
-            return score > 6 && (para.length === 0 || score / para.length > 0.07);
-          };
-
-          const pageHasMath = textBlocks.some(tb => 
-            tb.paragraphs.some((p: string) => isMathBlockHeuristic(p))
-          );
-
-          if (pageHasMath) {
-            htmlPages.push({ 
-              id: i, 
-              isScanned: true, 
-              isMathPage: true, 
-              isLoaded: false, 
-              dataUrl: '' 
-            });
-            continue;
-          }
-
-          const imageBlocks = mergedRegions.map(r => ({
-            type: 'image',
-            y: r.sortY,
-            canvasX: r.canvasX,
-            canvasY: r.canvasY,
-            canvasW: r.canvasW,
-            canvasH: r.canvasH,
-            dataUrl: '',
-          }));
+          const imageBlocks = [
+            ...mergedRegions.map(r => ({
+              type: 'image',
+              y: r.sortY,
+              canvasX: r.canvasX,
+              canvasY: r.canvasY,
+              canvasW: r.canvasW,
+              canvasH: r.canvasH,
+              dataUrl: '',
+            })),
+            ...formulaBlocks,  // inline formula crops
+          ];
 
           const allBlocks = [...textBlocks, ...imageBlocks].sort((a: any, b: any) => a.y - b.y);
 
@@ -498,6 +739,13 @@ export default function ReaderView({
         if (isMounted) {
           setPages(htmlPages);
           setLoading(false);
+
+          // If the page parsing found outline entries (e.g. from lab-manual index table),
+          // use them for the sidebar — they always match the rendered table perfectly.
+          if (allOutlineEntries.length > 0) {
+            setOutline(allOutlineEntries);
+          }
+
           // Auto-scroll to last read page after render
           setTimeout(() => {
             const urlPage = new URLSearchParams(window.location.search).get('page');
@@ -616,6 +864,24 @@ export default function ReaderView({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentVisiblePage, totalPages]);
 
+  // Intercept clicks on #jump-page-N links embedded in index table rows
+  useEffect(() => {
+    const handleJumpClick = (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest('a[href^="#jump-page-"]');
+      if (!target) return;
+      e.preventDefault();
+      const href = target.getAttribute('href') || '';
+      const pageNum = parseInt(href.replace('#jump-page-', ''), 10);
+      if (isNaN(pageNum)) return;
+      const card = document.getElementById(`page-${pageNum}`);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+    document.addEventListener('click', handleJumpClick);
+    return () => document.removeEventListener('click', handleJumpClick);
+  }, []);
+
   const handleBackToLibrary = () => {
     saveSettings({ lastPage: currentVisiblePage, pagesRead: currentVisiblePage });
 
@@ -633,11 +899,9 @@ export default function ReaderView({
       root.style.setProperty("--card-bg", "#ffffff");
       root.style.setProperty("--text-color", "#2c2c2c");
       root.style.setProperty("--muted-color", "#888888");
-      document.body.classList.remove("dark-theme");
     }
     document.body.style.backgroundImage = "none";
     document.body.style.backgroundColor = libDark ? "#0d1117" : "#f7f4ef";
-    document.body.classList.remove("glass-theme");
 
     // router.refresh() clears the Next.js router cache so the reader page
     // always re-fetches fresh settings from the server on next visit
@@ -658,7 +922,7 @@ export default function ReaderView({
             style={{
               background: "var(--card-bg)",
               border: "1px solid var(--card-border)",
-              padding: "0",
+              padding: "var(--card-padding-scanned, 0)",
               boxShadow: "0 10px 40px rgba(0,0,0,0.03)",
               opacity: 0,
               transform: "translateY(30px)",
@@ -751,7 +1015,7 @@ export default function ReaderView({
             }
 
             const cleanParagraphs = block.paragraphs
-              .map((para: string) => para.replace(/\s+/g, ' ').trim())
+              .map((para: string) => para.replace(/[ \t\r\f\v\u00a0]+/g, ' ').trim())
               .filter((para: string) => para && para.length > 0);
 
             return (
@@ -762,7 +1026,7 @@ export default function ReaderView({
                 style={{
                   background: "var(--card-bg)",
                   border: "1px solid var(--card-border)",
-                  padding: "3rem 5rem",
+                  padding: "var(--card-padding-text, 3rem 5rem)",
                   boxShadow: "0 10px 40px rgba(0,0,0,0.03)",
                   opacity: 0,
                   transform: "translateY(30px)",
@@ -827,8 +1091,13 @@ export default function ReaderView({
     );
   }
 
+  const isNature = natureThemes.find(t => t.id === themeId);
+  const isMinimal = minimalThemes.find(t => t.id === themeId);
+  const isGlass = !!isNature;
+  const isDark = (isMinimal && ["dusk", "sage"].includes(themeId)) || (isNature && isNature.dark);
+
   return (
-    <>
+    <div className={`reader-container ${isGlass ? "glass-theme" : ""} ${isDark ? "dark-theme" : ""}`}>
       {/* Bokeh Background */}
       <div
         id="bokeh-bg"
@@ -887,9 +1156,9 @@ export default function ReaderView({
         ← Library
       </button>
       {/* Pages */}
-      <div
+      <div 
         ref={containerRef}
-        className="max-w-[820px] mx-auto pt-16 pb-32 px-4 sm:px-0"
+        className="max-w-5xl mx-auto pt-16 pb-32 px-4 sm:px-6 lg:px-8"
       >
         {renderedPages}
       </div>
@@ -953,6 +1222,16 @@ export default function ReaderView({
         }}
       />
 
+      <OutlineSidebar
+        isOpen={isOutlineOpen}
+        setIsOpen={setIsOutlineOpen}
+        outline={outline}
+        scrollToPage={(p) => {
+          const card = document.getElementById(`page-${p}`);
+          if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+        }}
+      />
+
       {/* CSS for page-visible fade-in and page-content paragraphs */}
       <style>{`
         .page-card.page-visible {
@@ -974,20 +1253,19 @@ export default function ReaderView({
            border: 1px solid var(--card-border);
            box-shadow: 0 10px 40px rgba(0,0,0,0.03);
         }
-        body:not(.glass-theme) .page-card.image-card {
+        .reader-container:not(.glass-theme) .page-card.image-card {
            background: #ffffff;
            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
            border-color: transparent;
         }
-        body:not(.glass-theme).dark-theme .page-card.image-card {
+        .reader-container:not(.glass-theme).dark-theme .page-card.image-card {
            background: var(--card-bg);
            box-shadow: 0 2px 12px rgba(0,0,0,0.3);
            border-color: transparent;
         }
         .page-content p {
           margin-bottom: 1.5em;
-          text-align: justify;
-          text-justify: inter-word;
+          text-align: left;
           hyphens: auto;
           -webkit-hyphens: auto;
         }
@@ -1021,13 +1299,13 @@ export default function ReaderView({
         .rich-markdown h2 { font-size: 1.5em; border-bottom: 1px solid rgba(0,0,0,0.06); padding-bottom: 0.2em; }
         .rich-markdown h3 { font-size: 1.25em; }
         .rich-markdown h4 { font-size: 1.1em; }
-        .rich-markdown p  { margin-bottom: 1em; text-align: justify; color: var(--text-color); }
+        .rich-markdown p  { margin-bottom: 1em; text-align: left; color: var(--text-color); line-height: var(--line-height); }
         .rich-markdown ul, .rich-markdown ol {
           padding-left: 1.8em;
           margin-bottom: 1.2em;
           color: var(--text-color);
         }
-        .rich-markdown li { margin-bottom: 0.4em; line-height: 1.7; }
+        .rich-markdown li { margin-bottom: 0.4em; line-height: var(--line-height); }
         .rich-markdown strong { font-weight: 700; color: var(--text-color); }
         .rich-markdown em { font-style: italic; color: var(--text-color); }
         .rich-markdown code {
@@ -1057,7 +1335,7 @@ export default function ReaderView({
           background: none;
           padding: 0;
           font-size: 0.875em;
-          line-height: 1.6;
+          line-height: var(--line-height);
         }
         .rich-markdown blockquote {
           border-left: 4px solid rgba(0,0,0,0.15);
@@ -1104,7 +1382,7 @@ export default function ReaderView({
           color: var(--text-color);
           border-bottom: 1px solid rgba(0,0,0,0.06);
           vertical-align: top;
-          line-height: 1.6;
+          line-height: var(--line-height);
         }
         body.dark-theme .rich-markdown td {
           border-bottom-color: rgba(255,255,255,0.06);
@@ -1168,6 +1446,6 @@ export default function ReaderView({
           border-color: rgba(255,255,255,0.07) !important;
         }
       `}</style>
-    </>
+    </div>
   );
 }

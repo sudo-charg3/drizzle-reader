@@ -108,40 +108,41 @@ export default function LibraryGrid() {
 
   return (
     <>
-      <div className="fixed top-0 right-8 h-20 flex items-center gap-3 z-[60]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      {/* Floating Bottom Navigation */}
+      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 z-[60] px-4 py-3 rounded-full shadow-2xl transition-all duration-300" style={{ fontFamily: "'DM Sans', sans-serif", background: isDark ? "rgba(22, 27, 39, 0.75)" : "rgba(255, 255, 255, 0.75)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", border: `1px solid ${borderColor}` }}>
         <button
           onClick={toggleDark}
-          className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200"
+          className="w-11 h-11 rounded-full flex items-center justify-center transition-all duration-200"
           style={{ color: "var(--text-color)", border: `1px solid ${borderColor}` }}
           onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = hoverBg)}
           onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
           title={isDark ? "Light mode" : "Dark mode"}
         >
-          <div className="relative w-4 h-4 flex items-center justify-center">
-            <Sun size={16} className={`absolute transition-all duration-300 ${isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 rotate-90'}`} />
-            <Moon size={16} className={`absolute transition-all duration-300 ${!isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 -rotate-90'}`} />
+          <div className="relative w-5 h-5 flex items-center justify-center">
+            <Sun size={20} className={`absolute transition-all duration-300 ${isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 rotate-90'}`} />
+            <Moon size={20} className={`absolute transition-all duration-300 ${!isDark ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-0 -rotate-90'}`} />
           </div>
         </button>
 
         <button
           onClick={() => setIsUploadOpen(true)}
-          className="px-4 py-1.5 rounded-full text-sm flex items-center gap-1.5 transition-all duration-200"
-          style={{ color: "var(--text-color)", border: `1px solid ${borderColor}` }}
+          className="px-6 py-2 min-h-[44px] rounded-full text-[0.95rem] font-medium flex items-center gap-2 transition-all duration-200"
+          style={{ color: "var(--text-color)", border: `1px solid ${borderColor}`, background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)" }}
           onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = hoverBg)}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)")}
         >
-          <Plus size={15} /> Add Book
+          <Plus size={18} /> Add Book
         </button>
 
         <button
           onClick={() => setIsBookmarksOpen(true)}
-          className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200"
+          className="w-11 h-11 rounded-full flex items-center justify-center transition-all duration-200"
           style={{ color: "var(--text-color)", border: `1px solid ${borderColor}` }}
           onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = hoverBg)}
           onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
           title="Bookmarks"
         >
-          {mounted && <Bookmark size={16} />}
+          {mounted && <Bookmark size={20} />}
         </button>
       </div>
 

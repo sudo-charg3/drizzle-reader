@@ -18,6 +18,20 @@
   --font-family: 'Lora', serif;
   --font-size: 1.15rem;
   --line-height: 1.85;
+
+  --card-padding-text: 3rem 3.5rem;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --card-padding-text: 2.5rem 3rem;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --card-padding-text: 1.5rem 1.5rem;
+  }
 }
 
 /* ─── Base ─── */
@@ -34,12 +48,134 @@ body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
+  overscroll-behavior-y: none;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* ─── Dark theme overrides (for marks/highlights) ─── */
 body.dark-theme mark {
   filter: brightness(0.85);
   color: #1a1a1a !important;
+}
+
+/* ─── Markdown Overrides (Restoring Tailwind resets) ─── */
+.rich-markdown ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1.5em;
+}
+
+.rich-markdown ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1.5em;
+}
+
+.rich-markdown li {
+  margin-bottom: 0.5em;
+}
+
+.rich-markdown li > ul, 
+.rich-markdown li > ol {
+  margin-bottom: 0;
+  margin-top: 0.5em;
+}
+
+/* ─── Rich Markdown Tables ─── */
+.rich-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5em;
+  font-size: 0.85em;
+  line-height: var(--line-height);
+  table-layout: fixed;
+}
+
+.rich-markdown table th,
+.rich-markdown table td {
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  padding: 0.45em 0.7em;
+  text-align: left;
+  word-break: break-word;
+  white-space: normal;
+  vertical-align: middle;
+}
+
+/* Kill <p> margins inside table cells (marked.js wraps content in <p>) */
+.rich-markdown table td p,
+.rich-markdown table th p {
+  margin: 0;
+  padding: 0;
+}
+
+/* # column — fixed, no wrap, centered */
+.rich-markdown table th:first-child,
+.rich-markdown table td:first-child {
+  width: 3.2em;
+  min-width: 3.2em;
+  text-align: center;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Pages column — fixed, no wrap, centered */
+.rich-markdown table th:last-child,
+.rich-markdown table td:last-child {
+  width: 6em;
+  min-width: 6em;
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+
+/* Experiment column — remaining width, left-aligned */
+.rich-markdown table th:nth-child(2),
+.rich-markdown table td:nth-child(2) {
+  text-align: left;
+}
+
+.rich-markdown table th {
+  background: rgba(128, 128, 128, 0.12);
+  font-weight: 700;
+  font-size: 0.75em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.rich-markdown table tr:nth-child(even) td {
+  background: rgba(128, 128, 128, 0.04);
+}
+
+.rich-markdown table tr:hover td {
+  background: rgba(128, 128, 128, 0.08);
+  transition: background 0.15s ease;
+}
+
+/* Page jump links in index table — styled as clickable chips */
+.rich-markdown table td:last-child a[href^="#jump-page-"] {
+  display: inline-block;
+  padding: 0.2em 0.6em;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.12);
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.88em;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: background 0.15s ease, transform 0.1s ease;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rich-markdown table td:last-child a[href^="#jump-page-"]:hover {
+  background: rgba(100, 100, 200, 0.18);
+  transform: scale(1.06);
 }
 
 /* ─── Glass theme (nature themes in reader) ─── */

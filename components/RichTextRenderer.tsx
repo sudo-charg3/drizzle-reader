@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, memo } from "react";
+import katex from "katex";
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
 
 /**
  * Detect whether a string looks like it contains LaTeX math, Markdown table
- * syntax, Mermaid diagram blocks, or Markdown structural syntax.
+ * syntax, Mermaid diagram blocks, Markdown structural syntax, or plain text.
  */
 const classifyParagraph = (text: string): "mermaid" | "table" | "markdown" | "latex" | "plain" => {
   const t = text.trim();
@@ -41,8 +42,23 @@ const classifyParagraph = (text: string): "mermaid" | "table" | "markdown" | "la
     return "latex";
   }
 
-  // Markdown headings / code blocks / bold / lists
-  if (/^#{1,6}\s/.test(t) || /^```/.test(t) || /\*\*.+?\*\*/.test(t) || /^(\s*[-*+]\s|\s*\d+\.\s)/.test(t)) {
+  // Greek letters appearing as Unicode (e.g., extracted from a PDF)
+  if (/[αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ]/.test(t)) {
+    return "latex";
+  }
+
+  // Physics / math symbols: superscripts, subscripts, special notation
+  if (/[²³¹⁰⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉∆Δ]/.test(t)) {
+    return "latex";
+  }
+
+  // Physics unit patterns: m/s², kg·m, N·m, etc.
+  if (/\b\d+(\.\d+)?\s*(m\/s[²2]|kg[·•]m|N[·•]m|J\/mol|kJ\/kg|W\/m|rad\/s|m\/s|km\/h)\b/.test(t)) {
+    return "latex";
+  }
+
+  // Markdown headings / code blocks / bold / lists (even if they start mid-string after a newline)
+  if (/^#{1,6}\s/.test(t) || /^```/.test(t) || /\*\*.+?\*\*/.test(t) || /(^|\n)\s*([-*+]|\d+\.)\s/.test(t)) {
     return "markdown";
   }
 
@@ -60,80 +76,63 @@ const extractMermaidCode = (text: string): string => {
 
 // ─── Sub-renderers ───────────────────────────────────────────────────────────
 
-/** Inline + display LaTeX renderer using KaTeX */
+/** Inline + display LaTeX renderer using KaTeX (static import — no async race) */
 function LatexParagraph({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!ref.current) return;
 
-    import("katex").then((katexMod) => {
-      const katex = katexMod.default;
+    const container = ref.current;
+    let result = text;
 
-      // Process the text: replace $$ blocks, \[ blocks, $ blocks, \( blocks
-      const container = ref.current!;
-
-      // Build HTML with rendered math
-      let result = text;
-
-      // Display math: $$...$$ → <span class="katex-display-block">
-      result = result.replace(/\$\$([\s\S]+?)\$\$/g, (_match, formula) => {
-        try {
-          return `<div class="katex-display-wrapper">${katex.renderToString(formula.trim(), { displayMode: true, throwOnError: false, output: "html" })}</div>`;
-        } catch {
-          return `<div class="katex-display-wrapper katex-error">${formula}</div>`;
-        }
-      });
-
-      // Display math: \[...\]
-      result = result.replace(/\\\[([\s\S]+?)\\\]/g, (_match, formula) => {
-        try {
-          return `<div class="katex-display-wrapper">${katex.renderToString(formula.trim(), { displayMode: true, throwOnError: false, output: "html" })}</div>`;
-        } catch {
-          return `<div class="katex-display-wrapper katex-error">${formula}</div>`;
-        }
-      });
-
-      // Inline math: $...$
-      result = result.replace(/\$([^$\n]+?)\$/g, (_match, formula) => {
-        try {
-          return katex.renderToString(formula.trim(), { displayMode: false, throwOnError: false, output: "html" });
-        } catch {
-          return `<span class="katex-error">${formula}</span>`;
-        }
-      });
-
-      // Inline math: \(...\)
-      result = result.replace(/\\\(([\s\S]+?)\\\)/g, (_match, formula) => {
-        try {
-          return katex.renderToString(formula.trim(), { displayMode: false, throwOnError: false, output: "html" });
-        } catch {
-          return `<span class="katex-error">${formula}</span>`;
-        }
-      });
-
-      // Render bare LaTeX commands that appear without delimiters — wrap full line if it looks math-heavy
-      // (heuristic: >2 backslash commands in a short string)
-      const backslashCount = (text.match(/\\/g) || []).length;
-      if (backslashCount > 2 && !text.includes("$") && !text.includes("\\[") && !text.includes("\\(")) {
-        try {
-          result = `<div class="katex-display-wrapper">${katex.renderToString(text.trim(), { displayMode: true, throwOnError: false, output: "html" })}</div>`;
-        } catch {
-          // leave result as-is
-        }
+    // Display math: $$...$$
+    result = result.replace(/\$\$([\s\S]+?)\$\$/g, (_match, formula) => {
+      try {
+        return `<div class="katex-display-wrapper">${katex.renderToString(formula.trim(), { displayMode: true, throwOnError: false, output: "html" })}</div>`;
+      } catch {
+        return `<div class="katex-display-wrapper katex-error">${formula}</div>`;
       }
-
-      container.innerHTML = result;
     });
 
-    // Load KaTeX CSS if not already present
-    if (!document.getElementById("katex-css")) {
-      const link = document.createElement("link");
-      link.id = "katex-css";
-      link.rel = "stylesheet";
-      link.href = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css";
-      document.head.appendChild(link);
+    // Display math: \[...\]
+    result = result.replace(/\\\[([\s\S]+?)\\\]/g, (_match, formula) => {
+      try {
+        return `<div class="katex-display-wrapper">${katex.renderToString(formula.trim(), { displayMode: true, throwOnError: false, output: "html" })}</div>`;
+      } catch {
+        return `<div class="katex-display-wrapper katex-error">${formula}</div>`;
+      }
+    });
+
+    // Inline math: $...$
+    result = result.replace(/\$([^$\n]+?)\$/g, (_match, formula) => {
+      try {
+        return katex.renderToString(formula.trim(), { displayMode: false, throwOnError: false, output: "html" });
+      } catch {
+        return `<span class="katex-error">${formula}</span>`;
+      }
+    });
+
+    // Inline math: \(...\)
+    result = result.replace(/\\\(([\s\S]+?)\\\)/g, (_match, formula) => {
+      try {
+        return katex.renderToString(formula.trim(), { displayMode: false, throwOnError: false, output: "html" });
+      } catch {
+        return `<span class="katex-error">${formula}</span>`;
+      }
+    });
+
+    // Bare LaTeX commands (no delimiters) — wrap full line if math-heavy
+    const backslashCount = (text.match(/\\/g) || []).length;
+    if (backslashCount > 2 && !text.includes("$") && !text.includes("\\[") && !text.includes("\\(")) {
+      try {
+        result = `<div class="katex-display-wrapper">${katex.renderToString(text.trim(), { displayMode: true, throwOnError: false, output: "html" })}</div>`;
+      } catch {
+        // leave result as-is
+      }
     }
+
+    container.innerHTML = result;
   }, [text]);
 
   return (
@@ -152,7 +151,6 @@ function MarkdownParagraph({ text }: { text: string }) {
   useEffect(() => {
     if (!ref.current) return;
     import("marked").then(({ marked }) => {
-      // Marked v5+ returns string, not a Promise in synchronous mode
       const html = marked.parse(text, { async: false, gfm: true, breaks: true }) as string;
       ref.current!.innerHTML = html;
     });
@@ -162,13 +160,13 @@ function MarkdownParagraph({ text }: { text: string }) {
     <div
       ref={ref}
       className="markdown-paragraph rich-markdown animate-in fade-in slide-in-from-bottom-1 duration-700"
-      style={{ 
-        marginBottom: "1.5em", 
-        lineHeight: "inherit", 
-        color: "inherit", 
+      style={{
+        marginBottom: "1.5em",
+        lineHeight: "inherit",
+        color: "inherit",
         fontFamily: "inherit",
-        textAlign: "justify",
-        hyphens: "auto"
+        textAlign: "left",
+        hyphens: "auto",
       }}
     />
   );
@@ -252,7 +250,7 @@ export const RichTextRenderer = memo(function RichTextRenderer({
           return <MarkdownParagraph key={key} text={para} />;
         }
 
-        // Plain text — same as before
+        // Plain text
         return <p key={key}>{para}</p>;
       })}
     </>

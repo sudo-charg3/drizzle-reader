@@ -62,9 +62,9 @@ export default function UploadModal({ onClose }: UploadModalProps) {
       });
 
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to process PDF:", error);
-      alert("Failed to save PDF locally.");
+      alert(error?.message || "Failed to save PDF locally.");
       setIsUploading(false);
     }
   };

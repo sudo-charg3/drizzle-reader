@@ -30,13 +30,15 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Literata:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+        {/* KaTeX CSS — preloaded so math renders immediately, no flash */}
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossOrigin="anonymous" />
 
         {/* PWA: Apple-specific tags */}
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 
-        {/* Register service worker */}
+        {/* Register service worker and request persistent storage */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -45,6 +47,11 @@ export default function RootLayout({
                   navigator.serviceWorker.register('/sw.js')
                     .then(function(reg) { console.log('SW registered:', reg.scope); })
                     .catch(function(err) { console.warn('SW registration failed:', err); });
+                });
+              }
+              if (navigator.storage && navigator.storage.persist) {
+                navigator.storage.persist().then(function(persistent) {
+                  console.log('Storage is persistent:', persistent);
                 });
               }
             `,
