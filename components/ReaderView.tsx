@@ -1234,6 +1234,10 @@ export default function ReaderView({
 
       {/* CSS for page-visible fade-in and page-content paragraphs */}
       <style>{`
+        .page-card {
+          will-change: transform, opacity;
+          transform: translateZ(0);
+        }
         .page-card.page-visible {
           opacity: 1 !important;
           transform: translateY(0) !important;

@@ -151,7 +151,10 @@ function MarkdownParagraph({ text }: { text: string }) {
   useEffect(() => {
     if (!ref.current) return;
     import("marked").then(({ marked }) => {
-      const html = marked.parse(text, { async: false, gfm: true, breaks: true }) as string;
+      let html = marked.parse(text, { async: false, gfm: true, breaks: true }) as string;
+      // Wrap tables in a responsive container for mobile scrolling
+      html = html.replace(/<table/g, '<div class="table-responsive"><table');
+      html = html.replace(/<\/table>/g, '</table></div>');
       ref.current!.innerHTML = html;
     });
   }, [text]);

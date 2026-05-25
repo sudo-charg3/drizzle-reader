@@ -84,14 +84,23 @@ body.dark-theme mark {
   margin-top: 0.5em;
 }
 
-/* ─── Rich Markdown Tables ─── */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 1.5em;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: scroll-position;
+}
+
 .rich-markdown table {
+  display: table;
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 1.5em;
+  margin-bottom: 0;
   font-size: 0.85em;
   line-height: var(--line-height);
-  table-layout: fixed;
 }
 
 .rich-markdown table th,
@@ -133,10 +142,11 @@ body.dark-theme mark {
   vertical-align: middle;
 }
 
-/* Experiment column — remaining width, left-aligned */
+/* Title/Experiment column — flexible width but with a strict minimum */
 .rich-markdown table th:nth-child(2),
 .rich-markdown table td:nth-child(2) {
   text-align: left;
+  min-width: 14em;
 }
 
 .rich-markdown table th {
@@ -204,6 +214,8 @@ body.dark-theme mark {
   filter: blur(90px);
   opacity: 0.75;
   transition: background 0.5s ease;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* Blob 1 — top left */

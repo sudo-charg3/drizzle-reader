@@ -9,10 +9,10 @@ const INDEX_HEADER_WORDS = new Set([
 
 /**
  * Special extractor for lab-manual index tables:
- * S.NO | EXPERIMENT NAME | DATE | PAGE NO | REMARKS
+ * S.NO | CONTENTS | DATE | PAGE NO | REMARKS
  *
  * Uses DATE (DD-MM-YY) tokens as row anchors — no coordinate math.
- * Returns a compact 3-column markdown table: No | Experiment | Page
+ * Returns a compact 3-column markdown table: No | Contents | Page
  */
 function extractIndexTable(items: any[]): { markdown: string; entries: { title: string; pageIndex: number }[] } | null {
   const allText = items.map(i => i.str).join(' ').toUpperCase();
@@ -40,7 +40,7 @@ function extractIndexTable(items: any[]): { markdown: string; entries: { title: 
   }
   if (dates.length === 0) return null;
 
-  let markdown = '| # | Experiment | Pages |\n|:---:|---|:---:|\n';
+  let markdown = '| # | Contents | Pages |\n|:---:|---|:---:|\n';
   const entries: { title: string; pageIndex: number }[] = [];
   let lastEnd = 0;
 
@@ -103,7 +103,7 @@ function extractIndexTable(items: any[]): { markdown: string; entries: { title: 
   }
 
   const rowCount = (markdown.match(/^\|/gm) || []).length - 2;
-  return rowCount > 0 ? { markdown, entries } : null;
+  return rowCount > 1 ? { markdown, entries } : null;
 }
 
 
@@ -202,6 +202,48 @@ function extractTOCTable(items: any[]): string | null {
   return markdown;
 }
 
+/**
+ * Extractor for simple chapter indexes:
+ * CHAPTER TITLE PAGE NO.
+ * 1 Modernism And Rationality 7
+ */
+function extractChapterIndexTable(items: any[]): { markdown: string; entries: { title: string; pageIndex: number }[] } | null {
+  const allText = items.map(i => i.str).join(' ').toUpperCase();
+  if (!allText.includes('CHAPTER') || !allText.includes('TITLE') || !allText.includes('PAGE NO')) return null;
+
+  const nonEmpty = items.filter(i => i.str.trim());
+  const sorted = [...nonEmpty].sort((a, b) => {
+    const yDiff = b.transform[5] - a.transform[5];
+    if (Math.abs(yDiff) <= 5) return a.transform[4] - b.transform[4];
+    return yDiff;
+  });
+
+  const stream = sorted.map(i => i.str.trim()).filter(s => s).join(' ');
+  
+  const headerMatch = stream.match(/CHAPTER\s+TITLE\s+PAGE\s*NO\.?/i);
+  if (!headerMatch) return null;
+  
+  const contentStream = stream.slice(headerMatch.index! + headerMatch[0].length).trim();
+  
+  const regex = /\b(\d+)\s+([^\d]+?)\s+(\d+)(?=\s+\d+\s+[^\d]|$)/g;
+  let match;
+  let markdown = '| # | Title | Page |\n|:---:|---|:---:|\n';
+  const entries: { title: string; pageIndex: number }[] = [];
+  let rowCount = 0;
+  
+  while ((match = regex.exec(contentStream)) !== null) {
+    const chapNum = match[1];
+    const title = match[2].trim().replace(/\|/g, '-');
+    const pageNum = parseInt(match[3], 10);
+    
+    markdown += `| ${chapNum} | ${title} | [${pageNum}](#jump-page-${pageNum}) |\n`;
+    entries.push({ title: `${chapNum}. ${title}`, pageIndex: pageNum });
+    rowCount++;
+  }
+  
+  if (rowCount < 2) return null;
+  return { markdown, entries };
+}
 
 export function extractTablesFromItems(items: any[], viewportHeight: number) {
   // ── Fast path: index/contents table (lab-manual style) ──────────────────
@@ -242,221 +284,30 @@ export function extractTablesFromItems(items: any[], viewportHeight: number) {
     };
   }
 
-  // Skip pure-whitespace items — they are column spacers in the original PDF
-  // and merging them causes columns to collapse into one blob
-  const nonSpace = items.filter(item => item.str.trim().length > 0);
-  const sorted = [...nonSpace].sort((a, b) => b.transform[5] - a.transform[5]);
-
-  // Group items into lines by Y coordinate
-  let lines: any[][] = [];
-  let currentLine: any[] = [];
-  let currentY: number | null = null;
-
-  for (const item of sorted) {
-    if (currentY === null || Math.abs(currentY - item.transform[5]) <= 5) {
-      currentLine.push(item);
-      if (currentY === null) currentY = item.transform[5];
-    } else {
-      lines.push(currentLine);
-      currentLine = [item];
-      currentY = item.transform[5];
-    }
-  }
-  if (currentLine.length > 0) lines.push(currentLine);
-
-  // Sort each line by X and merge very-close items
-  for (let i = 0; i < lines.length; i++) {
-    lines[i].sort((a, b) => a.transform[4] - b.transform[4]);
-    const merged: any[] = [];
-    let cur: any = null;
-    for (const item of lines[i]) {
-      if (!cur) {
-        cur = { ...item };
-      } else if (item.transform[4] - (cur.transform[4] + cur.width) < 8) {
-        cur.str += ' ' + item.str;
-        cur.width = (item.transform[4] + item.width) - cur.transform[4];
-      } else {
-        merged.push(cur);
-        cur = { ...item };
-      }
-    }
-    if (cur) merged.push(cur);
-    lines[i] = merged;
-  }
-
-  const getColumns = (line: any[]) => line.map(cell => cell.transform[4]);
-
-  let tables: any[][][] = [];
-  let currentTable: any[][] = [];
-  let tableColumns: number[] = [];
-  let lastY = 0;
-
-  for (const line of lines) {
-    if (line.length === 0) continue;
-    const y = line[0].transform[5];
-    const isDense = line.length >= 3;
-
-    if (currentTable.length === 0) {
-      if (isDense) {
-        currentTable.push(line);
-        tableColumns = getColumns(line);
-        lastY = y;
-      }
-    } else {
-      const yGap = Math.abs(lastY - y);
-      if (yGap > 40) {
-        if (currentTable.length >= 3) tables.push([...currentTable]);
-        currentTable = [];
-        if (isDense) {
-          currentTable.push(line);
-          tableColumns = getColumns(line);
-          lastY = y;
-        }
-        continue;
-      }
-
-      let alignedItems = 0;
-      for (const cell of line) {
-        if (tableColumns.some(colX => Math.abs(colX - cell.transform[4]) < 30)) alignedItems++;
-      }
-      const isAligned = alignedItems >= Math.max(1, line.length - 1);
-
-      if (isAligned || isDense) {
-        currentTable.push(line);
-        for (const cell of line) {
-          if (!tableColumns.some(colX => Math.abs(colX - cell.transform[4]) < 30)) {
-            tableColumns.push(cell.transform[4]);
-          }
-        }
-        tableColumns.sort((a, b) => a - b);
-        lastY = y;
-      } else {
-        if (currentTable.length >= 3) tables.push([...currentTable]);
-        currentTable = [];
-        if (isDense) {
-          currentTable.push(line);
-          tableColumns = getColumns(line);
-          lastY = y;
-        }
-      }
-    }
-  }
-  if (currentTable.length >= 3) tables.push(currentTable);
-
-  const extractedTableBlocks: any[] = [];
-  const tableItemsToExclude = new Set<any>();
-
-  for (const t of tables) {
-    const allX: number[] = [];
-    for (const row of t) for (const cell of row) allX.push(cell.transform[4]);
-    allX.sort((a, b) => a - b);
-
-    const columns: number[] = [];
-    let curCol: number[] = [];
-    for (const x of allX) {
-      if (curCol.length === 0 || Math.abs(x - curCol[curCol.length - 1]) < 30) {
-        curCol.push(x);
-      } else {
-        columns.push(curCol.reduce((a, b) => a + b, 0) / curCol.length);
-        curCol = [x];
-      }
-    }
-    if (curCol.length > 0) columns.push(curCol.reduce((a, b) => a + b, 0) / curCol.length);
-
-    let logicalRows: any[][] = [];
-    let currentRowMap = new Map<number, any>();
-
-    const pushLogicalRow = () => {
-      if (currentRowMap.size > 0) {
-        logicalRows.push(columns.map((_, c) => currentRowMap.get(c) || { str: '' }));
-        currentRowMap = new Map();
-      }
+  // ── Fast path 3: Simple Chapter Index ──────────
+  const chapterIndexResult = extractChapterIndexTable(items);
+  if (chapterIndexResult) {
+    const nonEmpty = items.filter(i => i.str.trim());
+    const ys = nonEmpty.map(i => i.transform[5]);
+    const maxY = Math.max(...ys);
+    const minY = Math.min(...ys);
+    return {
+      extractedTableBlocks: [{
+        type: 'table',
+        y: viewportHeight - maxY,
+        height: maxY - minY + 20,
+        paragraphs: [chapterIndexResult.markdown],
+      }],
+      tableItemsToExclude: new Set<any>(nonEmpty),
+      outlineEntries: chapterIndexResult.entries,
     };
-
-    // Build column boundaries: midpoint between each adjacent column X
-    // An item belongs to column C if its X is between boundary[C-1] and boundary[C]
-    const colBoundaries: number[] = [];
-    for (let c = 0; c < columns.length - 1; c++) {
-      colBoundaries.push((columns[c] + columns[c + 1]) / 2);
-    }
-    const assignToCol = (x: number): number => {
-      for (let c = 0; c < colBoundaries.length; c++) {
-        if (x < colBoundaries[c]) return c;
-      }
-      return columns.length - 1;
-    };
-
-    for (const line of t) {
-      const occupiedCols = new Map<number, any>();
-      for (const cell of line) {
-        const colIdx = assignToCol(cell.transform[4]);
-        if (occupiedCols.has(colIdx)) {
-          occupiedCols.get(colIdx).str += ' ' + cell.str;
-        } else {
-          occupiedCols.set(colIdx, { ...cell });
-        }
-      }
-      // Only start a NEW logical row when column 0 (serial/S.NO) is occupied.
-      // Wrapped name lines only have column 1+ → they should append to current row.
-      if (occupiedCols.has(0) && currentRowMap.size > 0) pushLogicalRow();
-      for (const [c, cell] of Array.from(occupiedCols.entries())) {
-        if (currentRowMap.has(c)) currentRowMap.get(c).str += ' ' + cell.str;
-        else currentRowMap.set(c, { ...cell });
-      }
-    }
-    pushLogicalRow();
-
-    if (logicalRows.length < 2) continue;
-
-    // Identify column roles by header text
-    const headerRow = logicalRows[0];
-    let colNo = 0, colName = 1, colPage = columns.length - 2;
-    for (let c = 0; c < headerRow.length; c++) {
-      const h = (headerRow[c]?.str || '').toUpperCase().trim();
-      // Match serial col: "S.NO", "SNO", "S NO", "#" — but NOT "PAGE NO."
-      if (/^S[\s.]?NO\.?$/.test(h) || h === '#') colNo = c;
-      // Match name col
-      if (h.includes('NAME') || h.includes('EXPERIMENT') || h.includes('TITLE') || h.includes('TOPIC') || h.includes('DESCRIPTION')) colName = c;
-      // Match page col: must contain PAGE but not be confused with name
-      if ((h.includes('PAGE') || h === 'P.NO' || h === 'PG') && !h.includes('NAME')) colPage = c;
-    }
-
-    // Build compact 3-col markdown: No. | Experiment | Page
-    let markdown = `| No. | Experiment | Page |\n|---|---|---|\n`;
-    for (let i = 1; i < logicalRows.length; i++) {
-      const row = logicalRows[i];
-      const no   = (row[colNo]?.str   || '').trim().replace(/\|/g, '-');
-      const name = (row[colName]?.str  || '').trim().replace(/\|/g, '-');
-      const page = (row[colPage]?.str  || '').trim().replace(/\|/g, '-');
-      if (!no && !name) continue;
-      markdown += `| ${no} | ${name} | ${page} |\n`;
-    }
-
-    const firstRowY = t[0][0].transform[5];
-    const lastRowY  = t[t.length - 1][0].transform[5];
-    extractedTableBlocks.push({
-      type: 'table',
-      y: viewportHeight - firstRowY,
-      height: Math.abs(firstRowY - lastRowY) + 30,
-      paragraphs: [markdown],
-    });
-
-    for (const row of t) {
-      for (const mergedCell of row) {
-        for (const originalItem of items) {
-          if (
-            Math.abs(originalItem.transform[5] - mergedCell.transform[5]) <= 5 &&
-            originalItem.transform[4] >= mergedCell.transform[4] - 5 &&
-            originalItem.transform[4] <= mergedCell.transform[4] + mergedCell.width + 5
-          ) {
-            tableItemsToExclude.add(originalItem);
-          }
-        }
-      }
-    }
   }
 
-  return { extractedTableBlocks, tableItemsToExclude };
+  return { 
+    extractedTableBlocks: [], 
+    tableItemsToExclude: new Set<any>(),
+    outlineEntries: [] as { title: string; pageIndex: number }[]
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
