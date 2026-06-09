@@ -155,10 +155,6 @@ export default function ReaderView({
         root.style.setProperty("--text-color", minimal.textColor);
         root.style.setProperty("--muted-color", minimal.mutedColor);
         root.style.setProperty("--card-border", "transparent");
-        
-        // Bokeh blobs add lightness — hide on ALL dark themes
-        const isDark = ["dusk", "sage"].includes(themeId);
-        if (bokeh) bokeh.style.display = isDark ? "none" : "block";
       } else {
         const nature = natureThemes.find((t) => t.id === themeId);
       if (nature) {
@@ -177,9 +173,6 @@ export default function ReaderView({
             "--card-border",
             nature.dark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.55)"
           );
-          // Hide bokeh on dark nature themes (forest, autumn, ocean, space, aurora)
-          // — blobs add unwanted brightness on dark backgrounds
-          if (bokeh) bokeh.style.display = nature.dark ? "none" : "block";
         }
       }
 
@@ -795,39 +788,56 @@ export default function ReaderView({
   // Scroll Tracking & Progress Bar
   useEffect(() => {
     if (loading) return;
-    const handleScroll = () => {
-      const winScroll =
-        document.body.scrollTop || document.documentElement.scrollTop;
-      const height =
-        document.documentElement.scrollHeight -
-        document.documentElement.clientHeight;
-      if (height > 0) {
-        const bar = document.getElementById("reading-progress-bar");
-        if (bar) bar.style.width = `${(winScroll / height) * 100}%`;
-      }
+    let ticking = false;
+    let cards = document.querySelectorAll(".page-card");
+    const observer = new MutationObserver(() => {
+      cards = document.querySelectorAll(".page-card");
+    });
+    if (containerRef.current) {
+      observer.observe(containerRef.current, { childList: true, subtree: true });
+    }
 
-      const cards = document.querySelectorAll(".page-card");
-      if (cards.length > 0) {
-        const triggerLine = window.innerHeight * 0.4;
-        for (let i = 0; i < cards.length; i++) {
-          if (cards[i].getBoundingClientRect().bottom > triggerLine) {
-            const pageId = parseInt(
-              (cards[i] as HTMLElement).dataset.pageIndex || "1"
-            );
-            if (pageId !== currentVisiblePage) {
-              setCurrentVisiblePage(pageId);
-              highestPageReadRef.current = Math.max(
-                highestPageReadRef.current,
-                pageId
-              );
-            }
-            break;
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const winScroll =
+            document.body.scrollTop || document.documentElement.scrollTop;
+          const height =
+            document.documentElement.scrollHeight -
+            document.documentElement.clientHeight;
+          if (height > 0) {
+            const bar = document.getElementById("reading-progress-bar");
+            if (bar) bar.style.width = `${(winScroll / height) * 100}%`;
           }
-        }
+
+          if (cards.length > 0) {
+            const triggerLine = window.innerHeight * 0.4;
+            for (let i = 0; i < cards.length; i++) {
+              if (cards[i].getBoundingClientRect().bottom > triggerLine) {
+                const pageId = parseInt(
+                  (cards[i] as HTMLElement).dataset.pageIndex || "1"
+                );
+                if (pageId !== currentVisiblePage) {
+                  setCurrentVisiblePage(pageId);
+                  highestPageReadRef.current = Math.max(
+                    highestPageReadRef.current,
+                    pageId
+                  );
+                }
+                break;
+              }
+            }
+          }
+          ticking = false;
+        });
+        ticking = true;
       }
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      observer.disconnect();
+    };
   }, [loading, currentVisiblePage]);
 
   // Auto-save on page change
@@ -1102,6 +1112,7 @@ export default function ReaderView({
       <div
         id="bokeh-bg"
         className="fixed inset-0 -z-10 overflow-hidden pointer-events-none"
+        style={{ display: isDark ? "none" : "block" }}
       >
         <div
           className="absolute rounded-full"

@@ -18,7 +18,7 @@ export default function PageNavigator({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [sliderVal, setSliderVal] = useState(currentPage);
-  const [inputVal, setInputVal] = useState(currentPage);
+  const [inputVal, setInputVal] = useState<number | string>(currentPage);
   const isDragging = useRef(false);
   const navRef = useRef<HTMLDivElement>(null);
 
@@ -129,11 +129,21 @@ export default function PageNavigator({
               min={1}
               max={totalPages || 1}
               value={inputVal}
-              onChange={(e) => setInputVal(parseInt(e.target.value) || 1)}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "") {
+                  setInputVal("");
+                } else {
+                  setInputVal(parseInt(val));
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  scrollToPage(inputVal);
-                  setExpanded(false);
+                  const targetPage = typeof inputVal === 'number' ? inputVal : parseInt(inputVal as string);
+                  if (!isNaN(targetPage)) {
+                    scrollToPage(targetPage);
+                    setExpanded(false);
+                  }
                 }
               }}
               className="w-[60px] text-center outline-none"
@@ -147,7 +157,13 @@ export default function PageNavigator({
               }}
             />
             <button
-              onClick={() => { scrollToPage(inputVal); setExpanded(false); }}
+              onClick={() => { 
+                const targetPage = typeof inputVal === 'number' ? inputVal : parseInt(inputVal as string);
+                if (!isNaN(targetPage)) {
+                  scrollToPage(targetPage); 
+                  setExpanded(false); 
+                }
+              }}
               style={{
                 padding: "2px 10px",
                 fontSize: "0.8rem",
